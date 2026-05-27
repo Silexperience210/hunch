@@ -1,0 +1,71 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Node / Bun / Next.js
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+*.log
+.pnpm-store/
+.bun/
+
+# Environment files (NEVER commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Operator state (NEVER commit operator data)
+operator-state/
+mint-state.sqlite
+mint-state.sqlite-journal
+oracle-state.sqlite
+oracle-state.sqlite-journal
+relay-state.sqlite
+relay-state.sqlite-journal
+ldk-data/
+electrs-data/
+bitcoin-data/
+
+# Frost shares (NEVER commit)
+frost-shares/
+*.frost
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# OS
+*.tmp
+*.bak
+
+# Test outputs
+coverage/
+test-results/
+playwright-report/
+*.lcov
+
+# Tor hidden service descriptors (NEVER commit)
+tor-hs/
+hostname
+hs_ed25519_*
+
+# Logs
+logs/
+*.log.gz
+
+# Local dev convenience
+local/
+scratch/
