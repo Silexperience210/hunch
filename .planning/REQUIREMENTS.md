@@ -183,11 +183,37 @@
 
 ## Traceability
 
-*Populated by `gsd-roadmapper` after `ROADMAP.md` generated.*
-
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| (to be populated) | | |
+| PROTO-01 | Phase 1 — Cypherpunk Foundation | Pending |
+| PROTO-02 | Phase 1 — Cypherpunk Foundation | Pending |
+| PROTO-03 | Phase 1 — Cypherpunk Foundation | Pending |
+| PROTO-04 | Phase 1 — Cypherpunk Foundation | Pending |
+| PROTO-05 | Phase 1 — Cypherpunk Foundation | Pending |
+| PROTO-06 | Phase 1 — Cypherpunk Foundation | Pending |
+| PROTO-07 | Phase 1 — Cypherpunk Foundation | Pending |
+| PROTO-08 | Phase 1 — Cypherpunk Foundation | Pending |
+| SPIKE-01 | Phase 1 — Cypherpunk Foundation | Pending |
+| SPIKE-02 | Phase 1 — Cypherpunk Foundation | Pending |
+| SPIKE-03 | Phase 1 — Cypherpunk Foundation | Pending |
+| SPIKE-04 | Phase 1 — Cypherpunk Foundation | Pending |
+| LEGAL-01 | Phase 1 — Cypherpunk Foundation | Pending |
+| LEGAL-02 | Phase 1 — Cypherpunk Foundation | Pending |
+| LEGAL-03 | Phase 1 — Cypherpunk Foundation | Pending |
+| LEGAL-04 | Phase 1 — Cypherpunk Foundation | Pending |
+| LEGAL-05 | Phase 1 — Cypherpunk Foundation | Pending |
+| LEGAL-06 | Phase 1 — Cypherpunk Foundation | Pending |
+| MINT-01..13 | Phase 2 — Mainnet Spine | Pending |
+| ORACLE-01..09 | Phase 2 — Mainnet Spine | Pending |
+| RELAY-01..06 | Phase 2 — Mainnet Spine | Pending |
+| UI-01..21 | Phase 2 — Mainnet Spine | Pending |
+| CURATE-01..07 | Phase 2 — Mainnet Spine | Pending |
+| OPS-01..06 | Phase 2 — Mainnet Spine | Pending |
+| OPS-07..11 | Phase 3 — Mainnet Launch & Hardening | Pending |
+| SEC-01..08 | Phase 3 — Mainnet Launch & Hardening | Pending |
+| LAUNCH-01..06 | Phase 3 — Mainnet Launch & Hardening | Pending |
+
+**Coverage:** 84 v1 requirements, 100% mapped to a phase. v2 items (Phase 4 / future milestones) tracked separately when v2 milestone opens.
 
 ---
 *Requirements generated: 2026-05-27*
