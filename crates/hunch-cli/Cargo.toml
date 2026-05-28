@@ -1,0 +1,12 @@
+[package]
+name = "hunch-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Hunch CLI (Phase 1: stub)"
+
+[[bin]]
+name = "hunch"
+path = "src/main.rs"

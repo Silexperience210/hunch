@@ -1,0 +1,18 @@
+{
+  "name": "hunch-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify:repo": "bash scripts/verify-repo.sh",
+    "verify:hips": "bash scripts/verify-hips.sh",
+    "verify:kinds": "bun scripts/verify-kind-collisions.ts"
+  },
+  "dependencies": {
+    "@nostr-dev-kit/ndk": "^2.10.0"
+  },
+  "devDependencies": {
+    "markdownlint-cli": "^0.41.0",
+    "@types/bun": "latest"
+  }
+}

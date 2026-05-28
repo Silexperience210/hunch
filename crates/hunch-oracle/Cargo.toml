@@ -1,0 +1,11 @@
+[package]
+name = "hunch-oracle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Hunch oracle with NIP-88 + FROST k-of-n threshold Schnorr (Phase 1: stub; impl in Phase 2 per HIP-4)"
+
+[dependencies]
+serde.workspace = true

@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/hunch-protocol",
+    "crates/hunch-mint",
+    "crates/hunch-oracle",
+    "crates/hunch-relay",
+    "crates/hunch-matcher",
+    "crates/hunch-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Silexperience210/hunch"
+authors = ["Silex <silex@hunch.markets>"]
+rust-version = "1.80"
+
+[workspace.dependencies]
+tokio = { version = "1.40", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"

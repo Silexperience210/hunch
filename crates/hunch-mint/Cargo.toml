@@ -1,0 +1,11 @@
+[package]
+name = "hunch-mint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Hunch Cashu mint with NUT-CTF integration (Phase 1: stub; impl in Phase 2 per HIP-3)"
+
+[dependencies]
+serde.workspace = true

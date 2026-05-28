@@ -1,0 +1,11 @@
+[package]
+name = "hunch-relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Hunch Nostr relay configuration + deployment (Phase 1: stub; impl in Phase 2 per HIP-1)"
+
+[dependencies]
+serde.workspace = true
