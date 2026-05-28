@@ -1,7 +1,7 @@
 # Hunch — Project State
 
 **Generated:** 2026-05-27
-**Last updated:** 2026-05-28 after Phase 1 planning
+**Last updated:** 2026-05-28 after Plan 01 execution (Wave 1)
 
 ## Project Reference
 
@@ -14,15 +14,16 @@ See: `.planning/PROJECT.md` (updated 2026-05-27)
 ## Current Status
 
 - **Active milestone:** v1 — Mainnet Cypherpunk Spine
-- **Active phase:** Phase 1 — Cypherpunk Foundation (planned 2026-05-28, ready to execute via `/gsd-execute-phase 1`)
+- **Active phase:** Phase 1 — Cypherpunk Foundation (Wave 1 done, Wave 2 pending — Plans 02/03/04)
+- **Plans completed:** 1 / 4 (Plan 01 done; approved by user 2026-05-28)
 - **Phases completed:** 0 / 4
-- **Requirements (v1):** 0 completed / 84 total
+- **Requirements (v1):** 2 completed / 84 total (PROTO-07 partial — repo URL PENDING; PROTO-08)
 
 ## Milestone Progress
 
 | Phase | Name | Status | Completed | Total |
 |-------|------|--------|-----------|-------|
-| 1 | Cypherpunk Foundation | Ready to execute (4 plans) | 0 | 18 |
+| 1 | Cypherpunk Foundation | Wave 1 done (Plan 01 ✓); Wave 2 pending (Plans 02/03/04) | 2 | 18 |
 | 2 | Mainnet Spine | Not started | 0 | 62 |
 | 3 | Mainnet Launch & Hardening | Not started | 0 | 19 |
 | 4 | Decentralization & Federation (v2 deferred) | Future | — | — |
@@ -49,6 +50,7 @@ See `.planning/config.json`:
 | 2026-05-28 | Phase 1 research completed (1188 lines; surfaced PR #128 closure + NUT-CTF pivot) | `.planning/phases/01-cypherpunk-foundation/01-RESEARCH.md` |
 | 2026-05-28 | Phase 1 context locked (NUT-CTF Path A, full pseudonymity, counsel-driven jurisdiction) | `.planning/phases/01-cypherpunk-foundation/01-CONTEXT.md` |
 | 2026-05-28 | Phase 1 planned — 4 plans, all 18 requirements covered (PASSED iteration 2) | `.planning/phases/01-cypherpunk-foundation/01-0[1-4]-PLAN.md` |
+| 2026-05-28 | Plan 01 executed (Wave 1) — Cargo workspace + corrigendum + scripts + outreach queue. User approved checkpoint. PROTO-07 partial (repo URL PENDING), PROTO-08 verified | `.planning/phases/01-cypherpunk-foundation/01-01-SUMMARY.md` |
 
 ## Key Decisions Made
 
@@ -65,7 +67,9 @@ See `.planning/config.json`:
 
 ## Next Steps
 
-Run `/gsd-execute-phase 1` to start executing the 4 planned plans (Foundation → HIPs+Spikes+Legal in wave 2).
+1. **User action (unblocks Plan 02 + 04 URL references):** `gh repo create Silexperience210/hunch --public && git push -u origin main`
+2. **Execute Wave 2:** Plans 02 (HIPs), 03 (Spikes), 04 (Legal) — run via `/gsd-execute-phase 1 --wave 2` (6–8 weeks active work + async waits for counsel + maintainers + reviewers)
+3. **Send audit firm outreach** from `docs/audit-shortlist-outreach.md` (Phase 1 week 4–5 timing)
 
 ## Phase 1 Plan Structure (4 plans, 2 waves)
 
