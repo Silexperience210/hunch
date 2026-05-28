@@ -1,0 +1,14 @@
+# Counsel-signed PDFs and other private legal artifacts.
+# Per CONTEXT.md decision D-05 (full pseudonymity scope), these MUST NOT be committed publicly.
+
+*.pdf
+*.pdf.asc
+*.pdf.gpg
+*.pem
+*.key
+
+# Keep the README explaining the storage convention
+!README.md
+
+# Keep .gitignore itself
+!.gitignore
