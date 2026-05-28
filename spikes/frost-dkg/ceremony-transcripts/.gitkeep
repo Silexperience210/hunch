@@ -1,0 +1,3 @@
+# Placeholder for FROST DKG ceremony transcripts (anonymized).
+# Each ceremony attempt creates a transcript file here documenting
+# outcome (success/abort), date, participant pubkeys (npub only, no shares).
