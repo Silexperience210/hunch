@@ -1,7 +1,7 @@
 # Hunch — Project State
 
 **Generated:** 2026-05-27
-**Last updated:** 2026-05-27 after initialization
+**Last updated:** 2026-05-28 after Phase 1 planning
 
 ## Project Reference
 
@@ -14,7 +14,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-27)
 ## Current Status
 
 - **Active milestone:** v1 — Mainnet Cypherpunk Spine
-- **Active phase:** None (Phase 1 ready to start via `/gsd-discuss-phase 1` or `/gsd-plan-phase 1`)
+- **Active phase:** Phase 1 — Cypherpunk Foundation (planned 2026-05-28, ready to execute via `/gsd-execute-phase 1`)
 - **Phases completed:** 0 / 4
 - **Requirements (v1):** 0 completed / 84 total
 
@@ -22,7 +22,7 @@ See: `.planning/PROJECT.md` (updated 2026-05-27)
 
 | Phase | Name | Status | Completed | Total |
 |-------|------|--------|-----------|-------|
-| 1 | Cypherpunk Foundation | Ready to start | 0 | 18 |
+| 1 | Cypherpunk Foundation | Ready to execute (4 plans) | 0 | 18 |
 | 2 | Mainnet Spine | Not started | 0 | 62 |
 | 3 | Mainnet Launch & Hardening | Not started | 0 | 19 |
 | 4 | Decentralization & Federation (v2 deferred) | Future | — | — |
@@ -46,6 +46,9 @@ See `.planning/config.json`:
 | 2026-05-27 | Research completed (4 dimensions + summary) | `.planning/research/` |
 | 2026-05-27 | v1 requirements defined (84 reqs) | `.planning/REQUIREMENTS.md` |
 | 2026-05-27 | Roadmap created (4 phases, 3 active v1) | `.planning/ROADMAP.md` |
+| 2026-05-28 | Phase 1 research completed (1188 lines; surfaced PR #128 closure + NUT-CTF pivot) | `.planning/phases/01-cypherpunk-foundation/01-RESEARCH.md` |
+| 2026-05-28 | Phase 1 context locked (NUT-CTF Path A, full pseudonymity, counsel-driven jurisdiction) | `.planning/phases/01-cypherpunk-foundation/01-CONTEXT.md` |
+| 2026-05-28 | Phase 1 planned — 4 plans, all 18 requirements covered (PASSED iteration 2) | `.planning/phases/01-cypherpunk-foundation/01-0[1-4]-PLAN.md` |
 
 ## Key Decisions Made
 
@@ -62,15 +65,31 @@ See `.planning/config.json`:
 
 ## Next Steps
 
-Run `/gsd-discuss-phase 1` to gather context for Phase 1 planning (recommended), or `/gsd-plan-phase 1` to skip discussion and plan directly.
+Run `/gsd-execute-phase 1` to start executing the 4 planned plans (Foundation → HIPs+Spikes+Legal in wave 2).
+
+## Phase 1 Plan Structure (4 plans, 2 waves)
+
+| Plan | Name | Wave | Reqs | Files |
+|------|------|------|------|-------|
+| 01 | Repo Foundation + Corrigendum | 1 | PROTO-07, PROTO-08 | 26 (12 trivial stubs) |
+| 02 | HIPs Drafting + Nostr Publication | 2 | PROTO-01..06 | 12 |
+| 03 | Technical Spikes (NUT-CTF + FROST + Lightning-DLC NO-GO) | 2 | SPIKE-01..04 | 19 |
+| 04 | Legal Foundation (counsel + jurisdiction + ToS + privacy + PR + pseudonymity) | 2 | LEGAL-01..06 | 13 |
+
+## Locked Phase 1 Decisions (CONTEXT.md)
+
+1. **NUT-DLC = Path A (NUT-CTF / PR #337)** — PR #128 closed 2025-05-20, pivot confirmed
+2. **Lightning-DLC NO-GO for v1** — atomic.finance acquired by Lygos Aug 2025; SPIKE-04 = written assessment, not prototype
+3. **Jurisdiction deferred to LEGAL-01** — counsel produces recommendation; CH Stiftung + BVI BC is working hypothesis only
+4. **Full pseudonymity including frontend** — load-bearing post-Storm § 1960 conviction; counsel must accept pseudonymous client
 
 ## Outstanding Open Questions
 
-1. Final offshore jurisdiction selection (CH vs PA vs BVI vs SV) — needs counsel input in Phase 1
-2. Audit firm shortlist for Phase 3 (engage outreach in Phase 1)
-3. First external oracle partner (engage during Phase 2)
-4. LSP partner for Lightning liquidity (engage during Phase 2)
-5. Manifesto author / co-author (engage early Phase 1 for brand voice)
+1. Final offshore jurisdiction selection — DEFERRED to counsel in LEGAL-01/02
+2. Audit firm shortlist for Phase 3 — outreach in Phase 1 Plan 01
+3. First external oracle partner — engage during Phase 2
+4. LSP partner for Lightning liquidity — engage during Phase 2
+5. External HIP reviewers (Bitcoin / Cashu / DLC contributors) — outreach in Phase 1 Plan 02
 
 ---
 *State synced with PROJECT.md, REQUIREMENTS.md, ROADMAP.md*
