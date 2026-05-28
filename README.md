@@ -67,7 +67,7 @@ hunch/
 
 Hunch is mirrored across multiple hosts to resist deplatforming (cypherpunk principle 8 — Tor + IPFS first):
 
-- **GitHub (primary):** https://github.com/Silexperience210/hunch — PENDING (run `gh repo create Silexperience210/hunch --public --description "Hunch — permissionless cypherpunk prediction market protocol on Bitcoin" && git push -u origin main`)
+- **GitHub (primary):** https://github.com/Silexperience210/hunch — LIVE (published 2026-05-28)
 - **Radicle (p2p):** PENDING — install `rad` CLI, then `rad init --name hunch --description "Hunch protocol" --default-branch main --public && git push rad main`. Replace this line with the resulting `rad:z…` ID once initialized.
 - **Codeberg (fallback):** PENDING — sign up at codeberg.org, create repo `Silex/hunch`, then `git remote add codeberg git@codeberg.org:Silex/hunch.git && git push codeberg main`
 - **Tor hidden service:** Phase 2 deliverable
