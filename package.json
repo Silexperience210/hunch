@@ -6,10 +6,12 @@
   "scripts": {
     "verify:repo": "bash scripts/verify-repo.sh",
     "verify:hips": "bash scripts/verify-hips.sh",
-    "verify:kinds": "bun scripts/verify-kind-collisions.ts"
+    "verify:kinds": "bun scripts/verify-kind-collisions.ts",
+    "publish:hip": "bun scripts/publish-hip.ts"
   },
   "dependencies": {
-    "@nostr-dev-kit/ndk": "^2.10.0"
+    "@nostr-dev-kit/ndk": "^2.10.0",
+    "nostr-tools": "^2.7.0"
   },
   "devDependencies": {
     "markdownlint-cli": "^0.41.0",
