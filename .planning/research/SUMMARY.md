@@ -5,6 +5,17 @@
 **Researched:** 2026-05-27, enriched 2026-05-28
 **Confidence:** HIGH for legal precedents + feature landscape; MEDIUM-HIGH for stack + architecture (STACK / ARCHITECTURE remain at first-draft depth; FEATURES / PITFALLS enriched with primary sources).
 
+## 2026-05-28 Corrigendum — NUT-DLC pivot to NUT-CTF (PR #337)
+
+**Status update:** Cashu NUTs PR #128 (bilateral NUT-DLC by conduition) was **CLOSED 2025-05-20** by thesimplekid with comment "Closing as there is no active work. Please reopen if work continues." This document was written 2026-05-27 assuming PR #128 was the live critical path. That assumption is **WRONG**.
+
+**New chosen path (locked in CONTEXT.md decision D-01):** Path A — **NUT-CTF (Conditional Token Framework, PR #337 by joemphilips, opened 2026-02-07)**. NUT-CTF is architecturally distinct: oracle-agnostic mint with conditional token issuance + split-merge for secondary market, instead of mint-as-bilateral-counterparty.
+
+**References below to "NUT-DLC", "PR #128", "bilateral DLC mint" should be read as NUT-CTF / PR #337 / oracle-agnostic conditional token framework** unless explicitly marked as historical context. The executive narrative about Cashu mints with NUT-DLC providing liquidity now refers to mints implementing PR #337's NUT-CTF + NUT-CTF-split-merge sub-NUTs.
+
+See `.planning/phases/01-cypherpunk-foundation/01-RESEARCH.md` §3 for the deep-dive on this pivot.
+
+
 ## Executive Summary
 
 Hunch is a Bitcoin-only, no-KYC, permissionless prediction market protocol combining four primitives: **DLCs** (rust-dlc + DDK) for trustless settlement, **Cashu mints** (CDK with NUT-DLC extension, currently in Cashu PR #128 by `conduition`) for liquid YES/NO token markets, **Lightning** (LDK Node) for deposits/withdrawals, and **Nostr** for market discovery, oracle attestations, and reputation. The protocol is neutral; Hunch operates a reference frontend (`hunch.io`) plus a reference mint and oracle, but the protocol survives any operator failure.

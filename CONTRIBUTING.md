@@ -2,7 +2,7 @@
 
 Hunch is open source under the MIT license. Contributions are welcome.
 
-> **Status**: This is a draft. The full contribution guide will be refined during Phase 1 (Cypherpunk Foundation).
+> **Status**: Updated Phase 1 (Cypherpunk Foundation). Pseudonymity discipline is non-negotiable; see below.
 
 ## Code of Conduct
 
@@ -25,15 +25,30 @@ See [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md).
 
 5. **Don't introduce closed-source dependencies** on critical paths.
 
+## Pseudonymity
+
+Hunch is operated under pseudonym. Contributors are **encouraged to operate under pseudonym** as well; real-name disclosure is **never required** and never collected by the project.
+
+All contributor attribution uses Nostr `npub` or pseudonym; do **not** submit PRs with real-name commit authorship. Before pushing, set your per-repo git config:
+
+```bash
+git config user.name  "<pseudonym>"
+git config user.email "<pseudonym>@hunch.markets"
+```
+
+Do **not** edit your global `~/.gitconfig` — set the values per-repo so they apply only to this checkout.
+
+Commits with real-name authorship will be rejected on the public repo.
+
 ## Development Setup
 
 ### Rust services
 
 ```bash
 # Workspace at root
-cargo build
-cargo test
-cargo clippy
+cargo build --workspace
+cargo test --workspace
+cargo clippy --workspace
 ```
 
 ### Frontend
@@ -59,7 +74,10 @@ Follow Conventional Commits:
 - `chore:` — tooling, config
 - `spec:` — HIP changes
 
-Keep commits atomic. Each commit should be reviewable in isolation.
+Additional rules:
+- Sign all commits under the project pseudonym GPG key (`Silex_0xF777C5B8`). Real-name commits will be rejected on the public repo.
+- Keep commits atomic. Each commit should be reviewable in isolation.
+- Reference the relevant HIP or REQ-ID when applicable (e.g., `feat(mint): add NUT-CTF redeem path (HIP-3)`).
 
 ## Pull Requests
 
@@ -72,14 +90,19 @@ Keep commits atomic. Each commit should be reviewable in isolation.
 
 ## Security
 
-**Do not file security issues publicly.** Email security findings to [TBD — Phase 1 deliverable]. PGP key will be published in `SECURITY.md` (Phase 1 deliverable).
+**Do not file security issues publicly.** Report security findings via:
+
+- **Nostr DM** to `npub-TBD` (see SECURITY.md, Phase 2 deliverable), or
+- **PGP-encrypted email** to `<pseudonym>@protonmail.com` (TBD — published in SECURITY.md, Phase 2)
+
+The project PGP key is `Silex_0xF777C5B8`; verify the fingerprint via multiple channels before sending sensitive information.
 
 ## Communication
 
-- **GitHub Issues** — bugs, feature requests
-- **Discord/Matrix** — TBD, link in `README.md`
-- **Nostr** — `npub...` (TBD, Phase 1)
-- **Radicle mirror** — TBD, Phase 1
+- **GitHub Issues** — mirror for triage; canonical issue tracker rotates per-platform
+- **Radicle mirror** — TBD, Phase 1 deliverable; non-platform-controlled issue tracking
+- **Codeberg mirror** — TBD, Phase 1 deliverable; EU non-Microsoft fallback
+- **Nostr** — `npub-TBD` (Phase 2 deliverable, published in SECURITY.md / README.md)
 
 ---
 

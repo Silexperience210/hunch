@@ -4,6 +4,17 @@
 **Researched:** 2026-05-27
 **Confidence:** HIGH for table stakes and primary competitors (Polymarket V2 verified post-April-2026 launch, Augur fork state verified, Manifold deeply analyzed, Kalshi CFTC stance verified, Robosats / Mostro architecture verified); MEDIUM for cypherpunk-specific UX patterns (uncharted territory: Predyx is the closest analog and is custodial/centralized).
 
+## 2026-05-28 Corrigendum — NUT-DLC pivot to NUT-CTF (PR #337)
+
+**Status update:** Cashu NUTs PR #128 (bilateral NUT-DLC by conduition) was **CLOSED 2025-05-20** by thesimplekid with comment "Closing as there is no active work. Please reopen if work continues." This document was written 2026-05-27 assuming PR #128 was the live critical path. That assumption is **WRONG**.
+
+**New chosen path (locked in CONTEXT.md decision D-01):** Path A — **NUT-CTF (Conditional Token Framework, PR #337 by joemphilips, opened 2026-02-07)**. NUT-CTF is architecturally distinct: oracle-agnostic mint with conditional token issuance + split-merge for secondary market, instead of mint-as-bilateral-counterparty.
+
+**References below to "NUT-DLC", "PR #128", "bilateral DLC mint" should be read as NUT-CTF / PR #337 / oracle-agnostic conditional token framework** unless explicitly marked as historical context. User flows described as "buy YES with sat amount, sell position via atomic swap" map cleanly onto NUT-CTF split-merge (a first-class primitive in PR #337), whereas they required bespoke bilateral-DLC abstraction under PR #128.
+
+See `.planning/phases/01-cypherpunk-foundation/01-RESEARCH.md` §3 for the deep-dive on this pivot.
+
+
 ## Feature Landscape
 
 ### Table Stakes (Users Expect These)

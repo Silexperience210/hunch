@@ -4,6 +4,17 @@
 **Researched:** 2026-05-27
 **Confidence:** HIGH for the high-level decomposition; MEDIUM for the precise DLC-mint integration (depends on NUT-DLC spec maturity).
 
+## 2026-05-28 Corrigendum — NUT-DLC pivot to NUT-CTF (PR #337)
+
+**Status update:** Cashu NUTs PR #128 (bilateral NUT-DLC by conduition) was **CLOSED 2025-05-20** by thesimplekid with comment "Closing as there is no active work. Please reopen if work continues." This document was written 2026-05-27 assuming PR #128 was the live critical path. That assumption is **WRONG**.
+
+**New chosen path (locked in CONTEXT.md decision D-01):** Path A — **NUT-CTF (Conditional Token Framework, PR #337 by joemphilips, opened 2026-02-07)**. NUT-CTF is architecturally distinct: oracle-agnostic mint with conditional token issuance + split-merge for secondary market, instead of mint-as-bilateral-counterparty.
+
+**References below to "NUT-DLC", "PR #128", "bilateral DLC mint" should be read as NUT-CTF / PR #337 / oracle-agnostic conditional token framework** unless explicitly marked as historical context. In particular, Pattern 3 in this document ("mint-as-bilateral-DLC-counterparty") is now superseded; HIP-3 will define the NUT-CTF integration shape instead.
+
+See `.planning/phases/01-cypherpunk-foundation/01-RESEARCH.md` §3 for the deep-dive on this pivot.
+
+
 ## Standard Architecture
 
 ### System Overview

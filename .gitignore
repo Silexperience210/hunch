@@ -23,6 +23,13 @@ build/
 *.key
 secrets/
 
+# Project pseudonym GPG key (NEVER commit)
+*SECRET*
+Silex_0xF777C5B8_SECRET.asc
+
+# Counsel sign-off PDFs (encrypted-or-private per LEGAL-04)
+docs/legal/signoff/*.pdf
+
 # Operator state (NEVER commit operator data)
 operator-state/
 mint-state.sqlite
