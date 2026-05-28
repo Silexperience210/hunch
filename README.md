@@ -63,9 +63,25 @@ hunch/
 7. **No tokens.** No governance token, no utility token. Bitcoin is the token.
 8. **Tor + IPFS first.** Hidden service from day 1; clearnet is a convenience.
 
+## Mirrors
+
+Hunch is mirrored across multiple hosts to resist deplatforming (cypherpunk principle 8 — Tor + IPFS first):
+
+- **GitHub (primary):** https://github.com/Silexperience210/hunch — PENDING (run `gh repo create Silexperience210/hunch --public --description "Hunch — permissionless cypherpunk prediction market protocol on Bitcoin" && git push -u origin main`)
+- **Radicle (p2p):** PENDING — install `rad` CLI, then `rad init --name hunch --description "Hunch protocol" --default-branch main --public && git push rad main`. Replace this line with the resulting `rad:z…` ID once initialized.
+- **Codeberg (fallback):** PENDING — sign up at codeberg.org, create repo `Silex/hunch`, then `git remote add codeberg git@codeberg.org:Silex/hunch.git && git push codeberg main`
+- **Tor hidden service:** Phase 2 deliverable
+- **IPFS pin:** Phase 2 deliverable
+
+All mirrors track `main`. Reproducibility check (once mirrors are live):
+```bash
+git fetch --all && git log --oneline -5 origin/main rad/main codeberg/main
+```
+should show identical commit hashes across all three.
+
 ## Contributing
 
-Open source, contributions welcome. See `CONTRIBUTING.md` (to be written in Phase 1) for guidelines.
+Open source, contributions welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) for guidelines. Pseudonymous contributions are encouraged; real-name disclosure is never required.
 
 The project follows the [Get Shit Done (GSD)](https://github.com/) workflow for planning and execution. See `.planning/` for the active milestone, roadmap, and requirements.
 
