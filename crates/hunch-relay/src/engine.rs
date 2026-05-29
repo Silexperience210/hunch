@@ -25,10 +25,16 @@ pub struct IngestResult {
 
 impl IngestResult {
     fn ok(msg: &str) -> Self {
-        IngestResult { accepted: true, message: msg.into() }
+        IngestResult {
+            accepted: true,
+            message: msg.into(),
+        }
     }
     fn reject(msg: String) -> Self {
-        IngestResult { accepted: false, message: msg }
+        IngestResult {
+            accepted: false,
+            message: msg,
+        }
     }
 }
 
@@ -112,8 +118,14 @@ impl Relay {
 
     /// Returns stored events matching `filter`, newest first, honoring `limit`.
     pub fn query(&self, filter: &Value) -> Vec<Value> {
-        let mut matched: Vec<&Value> = self.by_id.values().filter(|ev| matches_filter(ev, filter)).collect();
-        matched.sort_by_key(|ev| std::cmp::Reverse(ev.get("created_at").and_then(Value::as_i64).unwrap_or(0)));
+        let mut matched: Vec<&Value> = self
+            .by_id
+            .values()
+            .filter(|ev| matches_filter(ev, filter))
+            .collect();
+        matched.sort_by_key(|ev| {
+            std::cmp::Reverse(ev.get("created_at").and_then(Value::as_i64).unwrap_or(0))
+        });
         if let Some(limit) = filter.get("limit").and_then(Value::as_u64) {
             matched.truncate(limit as usize);
         }
@@ -193,11 +205,17 @@ pub fn matches_filter(ev: &Value, filter: &Value) -> bool {
     if let Some(obj) = filter.as_object() {
         let tags = event_tags(ev);
         for (key, vals) in obj {
-            let Some(letter) = key.strip_prefix('#') else { continue };
-            let Some(wanted) = vals.as_array() else { continue };
+            let Some(letter) = key.strip_prefix('#') else {
+                continue;
+            };
+            let Some(wanted) = vals.as_array() else {
+                continue;
+            };
             let present = tags.iter().any(|t| {
                 t.first().map(|k| k == letter).unwrap_or(false)
-                    && t.get(1).map(|v| wanted.iter().any(|w| w.as_str() == Some(v.as_str()))).unwrap_or(false)
+                    && t.get(1)
+                        .map(|v| wanted.iter().any(|w| w.as_str() == Some(v.as_str())))
+                        .unwrap_or(false)
             });
             if !present {
                 return false;
@@ -220,8 +238,21 @@ mod tests {
         Keypair::from_secret_key(&Secp256k1::new(), &sk)
     }
 
-    fn signed(kp: &Keypair, kind: u32, tags: Vec<Vec<String>>, content: &str, created_at: i64) -> Value {
-        build_signed_event(&Secp256k1::new(), kp, kind, tags, content.into(), created_at)
+    fn signed(
+        kp: &Keypair,
+        kind: u32,
+        tags: Vec<Vec<String>>,
+        content: &str,
+        created_at: i64,
+    ) -> Value {
+        build_signed_event(
+            &Secp256k1::new(),
+            kp,
+            kind,
+            tags,
+            content.into(),
+            created_at,
+        )
     }
 
     fn valid_order_tags(market: &str) -> Vec<Vec<String>> {
@@ -249,7 +280,13 @@ mod tests {
     fn rejects_malformed_hunch_order() {
         let mut relay = Relay::new();
         // kind 38888 with no order tags → protocol rejects.
-        let ev = signed(&kp(1), KIND_ORDER, vec![vec!["d".into(), "x".into()]], "", 1);
+        let ev = signed(
+            &kp(1),
+            KIND_ORDER,
+            vec![vec!["d".into(), "x".into()]],
+            "",
+            1,
+        );
         let r = relay.ingest(&ev);
         assert!(!r.accepted, "{r:?}");
         assert!(r.message.contains("invalid"));
@@ -272,7 +309,11 @@ mod tests {
         let new = signed(&kp(3), KIND_ORDER, valid_order_tags(&market), "", 200);
         assert!(relay.ingest(&old).accepted);
         assert!(relay.ingest(&new).accepted);
-        assert_eq!(relay.len(), 1, "newer order should replace older for same (pubkey,kind,d)");
+        assert_eq!(
+            relay.len(),
+            1,
+            "newer order should replace older for same (pubkey,kind,d)"
+        );
         // An older event arriving late does not displace the newer one.
         let older = signed(&kp(3), KIND_ORDER, valid_order_tags(&market), "", 50);
         let r = relay.ingest(&older);

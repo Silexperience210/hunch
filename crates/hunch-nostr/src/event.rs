@@ -28,7 +28,12 @@ pub fn event_tags(ev: &Value) -> Vec<Tag> {
         .map(|arr| {
             arr.iter()
                 .filter_map(Value::as_array)
-                .map(|tag| tag.iter().filter_map(Value::as_str).map(String::from).collect())
+                .map(|tag| {
+                    tag.iter()
+                        .filter_map(Value::as_str)
+                        .map(String::from)
+                        .collect()
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -57,8 +62,10 @@ pub fn verify_event(ev: &Value) -> bool {
     let (Ok(sig_bytes), Ok(pk_bytes)) = (hex::decode(sig), hex::decode(pubkey)) else {
         return false;
     };
-    let (Ok(sig), Ok(xonly)) = (Signature::from_slice(&sig_bytes), XOnlyPublicKey::from_slice(&pk_bytes))
-    else {
+    let (Ok(sig), Ok(xonly)) = (
+        Signature::from_slice(&sig_bytes),
+        XOnlyPublicKey::from_slice(&pk_bytes),
+    ) else {
         return false;
     };
     Secp256k1::verification_only()
@@ -67,7 +74,13 @@ pub fn verify_event(ev: &Value) -> bool {
 }
 
 /// Computes the NIP-01 event id (the 32-byte sha256 of the canonical serialization).
-pub fn event_id(pubkey_hex: &str, created_at: i64, kind: u32, tags: &[Tag], content: &str) -> [u8; 32] {
+pub fn event_id(
+    pubkey_hex: &str,
+    created_at: i64,
+    kind: u32,
+    tags: &[Tag],
+    content: &str,
+) -> [u8; 32] {
     // Per NIP-01 the id preimage is a JSON array, NOT an object: [0, pubkey, created_at, kind, tags, content].
     let preimage = json!([0, pubkey_hex, created_at, kind, tags, content]);
     let serialized = serde_json::to_string(&preimage)
@@ -113,7 +126,8 @@ mod tests {
     fn test_keypair() -> Keypair {
         // Deterministic test-only key. Not a real secret.
         let sk = SecretKey::from_slice(
-            &hex::decode("5f80b1ac81a47b0e3ee7e3bd4e23c1f3a96a0b56cd96b3a5d99e3a7a76d8c3a0").unwrap(),
+            &hex::decode("5f80b1ac81a47b0e3ee7e3bd4e23c1f3a96a0b56cd96b3a5d99e3a7a76d8c3a0")
+                .unwrap(),
         )
         .unwrap();
         Keypair::from_secret_key(&Secp256k1::new(), &sk)
@@ -132,7 +146,8 @@ mod tests {
         assert_eq!(event["id"].as_str().unwrap(), hex::encode(recomputed));
 
         // The signature must verify against the event id under the event pubkey.
-        let sig = Signature::from_slice(&hex::decode(event["sig"].as_str().unwrap()).unwrap()).unwrap();
+        let sig =
+            Signature::from_slice(&hex::decode(event["sig"].as_str().unwrap()).unwrap()).unwrap();
         let xonly = XOnlyPublicKey::from_slice(&hex::decode(pubkey_hex).unwrap()).unwrap();
         secp.verify_schnorr(&sig, &recomputed, &xonly).unwrap();
     }
@@ -141,7 +156,14 @@ mod tests {
     fn verify_event_accepts_genuine_and_rejects_tampered() {
         let secp = Secp256k1::new();
         let kp = test_keypair();
-        let mut ev = build_signed_event(&secp, &kp, 30888, vec![vec!["d".into(), "m".into()]], "hi".into(), 1_700_000_000);
+        let mut ev = build_signed_event(
+            &secp,
+            &kp,
+            30888,
+            vec![vec!["d".into(), "m".into()]],
+            "hi".into(),
+            1_700_000_000,
+        );
         assert!(verify_event(&ev));
 
         // Tamper the content: id no longer matches → reject.
@@ -179,9 +201,15 @@ mod tests {
         let id = event_id("ab".repeat(32).as_str(), 1, 1, &[], "line1\n\"q\"");
         let preimage = json!([0, "ab".repeat(32), 1, 1, Vec::<Tag>::new(), "line1\n\"q\""]);
         let s = serde_json::to_string(&preimage).unwrap();
-        assert!(!s.contains(' '), "canonical form must not contain spaces: {s}");
+        assert!(
+            !s.contains(' '),
+            "canonical form must not contain spaces: {s}"
+        );
         assert!(s.contains("\\n"), "newline must be escaped");
         assert!(s.contains("\\\""), "quote must be escaped");
-        assert_eq!(id, event_id("ab".repeat(32).as_str(), 1, 1, &[], "line1\n\"q\""));
+        assert_eq!(
+            id,
+            event_id("ab".repeat(32).as_str(), 1, 1, &[], "line1\n\"q\"")
+        );
     }
 }

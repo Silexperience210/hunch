@@ -40,11 +40,15 @@ impl NonceStore {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         if !path.exists() {
-            return Ok(NonceStore { path, entries: BTreeMap::new() });
+            return Ok(NonceStore {
+                path,
+                entries: BTreeMap::new(),
+            });
         }
-        let raw = std::fs::read_to_string(&path).with_context(|| format!("reading nonce store {}", path.display()))?;
-        let entries: BTreeMap<String, NonceEntry> =
-            serde_json::from_str(&raw).with_context(|| format!("parsing nonce store {}", path.display()))?;
+        let raw = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading nonce store {}", path.display()))?;
+        let entries: BTreeMap<String, NonceEntry> = serde_json::from_str(&raw)
+            .with_context(|| format!("parsing nonce store {}", path.display()))?;
         Ok(NonceStore { path, entries })
     }
 
@@ -55,7 +59,11 @@ impl NonceStore {
             return Ok(entry.clone());
         }
         let (secret, pubkey) = generate_nonce();
-        let entry = NonceEntry { secret, pubkey, attested: None };
+        let entry = NonceEntry {
+            secret,
+            pubkey,
+            attested: None,
+        };
         self.entries.insert(market.to_string(), entry.clone());
         self.save()?;
         Ok(entry)
@@ -96,7 +104,8 @@ impl NonceStore {
         let json = serde_json::to_string_pretty(&self.entries)?;
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, json).with_context(|| format!("writing {}", tmp.display()))?;
-        std::fs::rename(&tmp, &self.path).with_context(|| format!("renaming into {}", self.path.display()))?;
+        std::fs::rename(&tmp, &self.path)
+            .with_context(|| format!("renaming into {}", self.path.display()))?;
         Ok(())
     }
 }
@@ -106,7 +115,10 @@ mod tests {
     use super::*;
 
     fn temp_path(tag: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("hunch-nonce-test-{tag}-{}.json", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "hunch-nonce-test-{tag}-{}.json",
+            std::process::id()
+        ))
     }
 
     #[test]

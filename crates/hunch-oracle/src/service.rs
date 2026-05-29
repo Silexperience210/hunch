@@ -29,14 +29,24 @@ impl OracleService {
         let secret_hex = secret_hex.trim();
         let bytes = hex::decode(secret_hex).context("oracle secret key is not valid hex")?;
         if bytes.len() != 32 {
-            anyhow::bail!("oracle secret key must be 32 bytes ({} hex chars), got {}", 64, secret_hex.len());
+            anyhow::bail!(
+                "oracle secret key must be 32 bytes ({} hex chars), got {}",
+                64,
+                secret_hex.len()
+            );
         }
         let secret_bytes: [u8; 32] = bytes.clone().try_into().expect("length checked above");
-        let sk = SecretKey::from_slice(&bytes).context("oracle secret key is not a valid secp256k1 scalar")?;
+        let sk = SecretKey::from_slice(&bytes)
+            .context("oracle secret key is not a valid secp256k1 scalar")?;
         let secp = Secp256k1::new();
         let keypair = Keypair::from_secret_key(&secp, &sk);
         let signer = SingleKeySigner::new(sk);
-        Ok(OracleService { signer, keypair, secret_bytes, secp })
+        Ok(OracleService {
+            signer,
+            keypair,
+            secret_bytes,
+            secp,
+        })
     }
 
     /// The oracle's x-only public key as hex (its Nostr pubkey and HIP-2 attestation key).
@@ -156,7 +166,12 @@ mod tests {
     fn announce_event_is_well_formed() {
         let oracle = OracleService::from_secret_hex(TEST_SECRET).unwrap();
         let event = oracle
-            .build_announce_event(&market_id(), &"bb".repeat(32), "Resolves on CB feed", 1_700_000_000)
+            .build_announce_event(
+                &market_id(),
+                &"bb".repeat(32),
+                "Resolves on CB feed",
+                1_700_000_000,
+            )
             .unwrap();
         assert_eq!(event["kind"], 88);
         let tags = event["tags"].as_array().unwrap();

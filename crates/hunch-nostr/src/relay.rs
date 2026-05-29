@@ -60,7 +60,10 @@ pub async fn publish(relay: &str, event: &Value, wait: Duration) -> Result<Publi
                     return Ok(PublishOutcome {
                         relay: relay_owned.clone(),
                         accepted: false,
-                        message: format!("NOTICE: {}", v.get(1).and_then(Value::as_str).unwrap_or("")),
+                        message: format!(
+                            "NOTICE: {}",
+                            v.get(1).and_then(Value::as_str).unwrap_or("")
+                        ),
                     });
                 }
             }
@@ -78,7 +81,11 @@ pub async fn publish(relay: &str, event: &Value, wait: Duration) -> Result<Publi
 }
 
 /// Publishes to every relay, one result per relay. Per-relay errors are captured as `Err`.
-pub async fn publish_all(relays: &[String], event: &Value, wait: Duration) -> Vec<(String, Result<PublishOutcome>)> {
+pub async fn publish_all(
+    relays: &[String],
+    event: &Value,
+    wait: Duration,
+) -> Vec<(String, Result<PublishOutcome>)> {
     let mut out = Vec::with_capacity(relays.len());
     for relay in relays {
         out.push((relay.clone(), publish(relay, event, wait).await));
@@ -97,9 +104,11 @@ pub async fn query(relay: &str, filter: Value, wait: Duration) -> Result<Vec<Val
         .with_context(|| format!("connecting to relay {relay}"))?;
 
     let sub_id = "hunch-q";
-    ws.send(Message::Text(json!(["REQ", sub_id, filter]).to_string().into()))
-        .await
-        .with_context(|| format!("sending REQ to {relay}"))?;
+    ws.send(Message::Text(
+        json!(["REQ", sub_id, filter]).to_string().into(),
+    ))
+    .await
+    .with_context(|| format!("sending REQ to {relay}"))?;
 
     let mut events = Vec::new();
     let _ = timeout(wait, async {
@@ -127,7 +136,9 @@ pub async fn query(relay: &str, filter: Value, wait: Duration) -> Result<Vec<Val
     })
     .await;
 
-    let _ = ws.send(Message::Text(json!(["CLOSE", sub_id]).to_string().into())).await;
+    let _ = ws
+        .send(Message::Text(json!(["CLOSE", sub_id]).to_string().into()))
+        .await;
     let _ = ws.close(None).await;
     Ok(events)
 }

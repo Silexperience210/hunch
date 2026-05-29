@@ -28,10 +28,12 @@ impl std::str::FromStr for DlcOutpoint {
     type Err = ProtocolError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (txid, vout) = s.split_once(':').ok_or_else(|| ProtocolError::MalformedTag {
-            tag: "dlc_contract",
-            detail: format!("expected `<txid>:<vout>`, got {s:?}"),
-        })?;
+        let (txid, vout) = s
+            .split_once(':')
+            .ok_or_else(|| ProtocolError::MalformedTag {
+                tag: "dlc_contract",
+                detail: format!("expected `<txid>:<vout>`, got {s:?}"),
+            })?;
         if txid.len() != 64 {
             return Err(ProtocolError::MalformedTag {
                 tag: "dlc_contract",
@@ -47,7 +49,10 @@ impl std::str::FromStr for DlcOutpoint {
             tag: "dlc_contract",
             detail: format!("vout parse: {e}"),
         })?;
-        Ok(DlcOutpoint { txid: txid.to_string(), vout })
+        Ok(DlcOutpoint {
+            txid: txid.to_string(),
+            vout,
+        })
     }
 }
 
@@ -127,17 +132,16 @@ impl Market {
         if outcomes != Outcome::ALL.to_vec() {
             return Err(ProtocolError::MalformedTag {
                 tag: "outcomes",
-                detail: format!(
-                    "HIP-2 mandates YES,NO,INVALID; got {outcomes_raw:?}"
-                ),
+                detail: format!("HIP-2 mandates YES,NO,INVALID; got {outcomes_raw:?}"),
             });
         }
-        let expiry: u64 = required_tag(tags, "expiry")?.parse().map_err(|e| {
-            ProtocolError::MalformedTag {
-                tag: "expiry",
-                detail: format!("u64 parse: {e}"),
-            }
-        })?;
+        let expiry: u64 =
+            required_tag(tags, "expiry")?
+                .parse()
+                .map_err(|e| ProtocolError::MalformedTag {
+                    tag: "expiry",
+                    detail: format!("u64 parse: {e}"),
+                })?;
         let refund_timeout: u64 = required_tag(tags, "refund_timeout")?.parse().map_err(|e| {
             ProtocolError::MalformedTag {
                 tag: "refund_timeout",
@@ -231,18 +235,12 @@ mod tests {
     fn sample_tags() -> Vec<TagTuple> {
         vec![
             vec!["d".into(), "btc-100k-eoy-2026".into()],
-            vec![
-                "oracle".into(),
-                "aa".repeat(32),
-            ],
+            vec!["oracle".into(), "aa".repeat(32)],
             vec!["outcomes".into(), "YES,NO,INVALID".into()],
             vec!["expiry".into(), "1767139200".into()],
             vec!["refund_timeout".into(), "1769817600".into()],
             vec!["mint".into(), "https://mint.hunch.markets".into()],
-            vec![
-                "dlc_contract".into(),
-                format!("{}:0", "bb".repeat(32)),
-            ],
+            vec!["dlc_contract".into(), format!("{}:0", "bb".repeat(32))],
             vec!["category".into(), "crypto".into()],
             vec!["t".into(), "bitcoin".into()],
             vec!["t".into(), "macro".into()],
@@ -265,7 +263,10 @@ mod tests {
         let content = sample_content_json();
         let m = Market::from_event(KIND_MARKET, &tags, &content).unwrap();
         assert_eq!(m.d, "btc-100k-eoy-2026");
-        assert_eq!(m.outcomes, vec![Outcome::Yes, Outcome::No, Outcome::Invalid]);
+        assert_eq!(
+            m.outcomes,
+            vec![Outcome::Yes, Outcome::No, Outcome::Invalid]
+        );
         assert_eq!(m.expiry, 1767139200);
         assert_eq!(m.refund_timeout, 1769817600);
         assert_eq!(m.mint, "https://mint.hunch.markets");
@@ -280,7 +281,13 @@ mod tests {
         let tags = sample_tags();
         let content = sample_content_json();
         let err = Market::from_event(38888, &tags, &content).unwrap_err();
-        assert!(matches!(err, ProtocolError::KindMismatch { expected: 30888, actual: 38888 }));
+        assert!(matches!(
+            err,
+            ProtocolError::KindMismatch {
+                expected: 30888,
+                actual: 38888
+            }
+        ));
     }
 
     #[test]
@@ -301,7 +308,13 @@ mod tests {
             }
         }
         let err = Market::from_event(KIND_MARKET, &tags, &sample_content_json()).unwrap_err();
-        assert!(matches!(err, ProtocolError::MalformedTag { tag: "outcomes", .. }));
+        assert!(matches!(
+            err,
+            ProtocolError::MalformedTag {
+                tag: "outcomes",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -314,7 +327,13 @@ mod tests {
             }
         }
         let err = Market::from_event(KIND_MARKET, &tags, &sample_content_json()).unwrap_err();
-        assert!(matches!(err, ProtocolError::MalformedTag { tag: "refund_timeout", .. }));
+        assert!(matches!(
+            err,
+            ProtocolError::MalformedTag {
+                tag: "refund_timeout",
+                ..
+            }
+        ));
     }
 
     #[test]

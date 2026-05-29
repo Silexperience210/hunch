@@ -21,7 +21,11 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
 #[derive(Parser)]
-#[command(name = "hunch-relay", version, about = "Hunch Nostr relay with HIP-1 kind validation")]
+#[command(
+    name = "hunch-relay",
+    version,
+    about = "Hunch Nostr relay with HIP-1 kind validation"
+)]
 struct Cli {
     /// Address to listen on (ws://).
     #[arg(long, env = "HUNCH_RELAY_LISTEN", default_value = "127.0.0.1:8080")]
@@ -40,7 +44,9 @@ async fn main() -> Result<()> {
     let relay = Arc::new(Mutex::new(Relay::new()));
     let (tx, _rx) = broadcast::channel::<Arc<Value>>(cli.broadcast_capacity);
 
-    let listener = TcpListener::bind(&cli.listen).await.with_context(|| format!("binding {}", cli.listen))?;
+    let listener = TcpListener::bind(&cli.listen)
+        .await
+        .with_context(|| format!("binding {}", cli.listen))?;
     eprintln!("hunch-relay listening on ws://{}", cli.listen);
 
     loop {
@@ -62,7 +68,9 @@ async fn main() -> Result<()> {
 }
 
 async fn handle_conn(stream: TcpStream, relay: Arc<Mutex<Relay>>, tx: Tx) -> Result<()> {
-    let ws = tokio_tungstenite::accept_async(stream).await.context("websocket handshake")?;
+    let ws = tokio_tungstenite::accept_async(stream)
+        .await
+        .context("websocket handshake")?;
     let (mut write, mut read) = ws.split();
     let mut rx = tx.subscribe();
     // Active subscriptions on this connection: sub_id -> its list of filters.
@@ -115,7 +123,11 @@ async fn handle_client_message(
             let Some(ev) = msg.get(1).cloned() else {
                 return send(write, &json!(["NOTICE", "invalid: EVENT missing event"])).await;
             };
-            let id = ev.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            let id = ev
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             let result = relay.lock().expect("relay mutex poisoned").ingest(&ev);
             send(write, &json!(["OK", id, result.accepted, result.message])).await?;
             if result.accepted {
@@ -125,9 +137,16 @@ async fn handle_client_message(
         }
         Some("REQ") => {
             let Some(sub_id) = msg.get(1).and_then(Value::as_str) else {
-                return send(write, &json!(["NOTICE", "invalid: REQ missing subscription id"])).await;
+                return send(
+                    write,
+                    &json!(["NOTICE", "invalid: REQ missing subscription id"]),
+                )
+                .await;
             };
-            let filters: Vec<Value> = msg.as_array().map(|a| a.iter().skip(2).cloned().collect()).unwrap_or_default();
+            let filters: Vec<Value> = msg
+                .as_array()
+                .map(|a| a.iter().skip(2).cloned().collect())
+                .unwrap_or_default();
             // Snapshot stored matches while holding the lock, then release before awaiting sends.
             let stored: Vec<Value> = {
                 let relay = relay.lock().expect("relay mutex poisoned");
@@ -162,5 +181,8 @@ async fn handle_client_message(
 }
 
 async fn send(write: &mut Sink, value: &Value) -> Result<()> {
-    write.send(Message::Text(value.to_string().into())).await.context("sending to client")
+    write
+        .send(Message::Text(value.to_string().into()))
+        .await
+        .context("sending to client")
 }

@@ -94,9 +94,14 @@ mod tests {
 
         let sig_hex = sign_attestation_with_nonce(&secret, &nonce, &market, Outcome::Yes).unwrap();
 
-        let att = OracleAttestation { market: market.clone(), outcome: Outcome::Yes, signature_hex: sig_hex };
+        let att = OracleAttestation {
+            market: market.clone(),
+            outcome: Outcome::Yes,
+            signature_hex: sig_hex,
+        };
         let oracle_xonly =
-            secp256k1::XOnlyPublicKey::from_slice(&hex::decode(xonly_hex(ORACLE_SECRET)).unwrap()).unwrap();
+            secp256k1::XOnlyPublicKey::from_slice(&hex::decode(xonly_hex(ORACLE_SECRET)).unwrap())
+                .unwrap();
         att.verify(&oracle_xonly).unwrap();
     }
 
@@ -111,12 +116,22 @@ mod tests {
         let s_scalar: [u8; 32] = sig_bytes[32..64].try_into().unwrap();
 
         let secp = zkp::Secp256k1::new();
-        let s_g = zkp::PublicKey::from_secret_key(&secp, &zkp::SecretKey::from_slice(&s_scalar).unwrap());
+        let s_g =
+            zkp::PublicKey::from_secret_key(&secp, &zkp::SecretKey::from_slice(&s_scalar).unwrap());
 
-        let sig_point_hex =
-            signature_point(&xonly_hex(ORACLE_SECRET), &xonly_hex(NONCE_SECRET), &market, Outcome::No).unwrap();
+        let sig_point_hex = signature_point(
+            &xonly_hex(ORACLE_SECRET),
+            &xonly_hex(NONCE_SECRET),
+            &market,
+            Outcome::No,
+        )
+        .unwrap();
 
-        assert_eq!(hex::encode(s_g.serialize()), sig_point_hex, "s·G must equal the sig point R + e·P");
+        assert_eq!(
+            hex::encode(s_g.serialize()),
+            sig_point_hex,
+            "s·G must equal the sig point R + e·P"
+        );
     }
 
     #[test]

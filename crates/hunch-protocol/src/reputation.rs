@@ -85,22 +85,26 @@ impl Reputation {
             return Err(ProtocolError::InvalidPubkey(target_pubkey));
         }
         let scope = required(tags, "scope")?.parse()?;
-        let score: i16 = required(tags, "score")?.parse().map_err(|e| ProtocolError::MalformedTag {
-            tag: "score",
-            detail: format!("i16 parse: {e}"),
-        })?;
+        let score: i16 =
+            required(tags, "score")?
+                .parse()
+                .map_err(|e| ProtocolError::MalformedTag {
+                    tag: "score",
+                    detail: format!("i16 parse: {e}"),
+                })?;
         if !(-100..=100).contains(&score) {
             return Err(ProtocolError::MalformedTag {
                 tag: "score",
                 detail: "score must be in [-100, +100] per HIP-5".into(),
             });
         }
-        let weight = optional(tags, "weight").map(|s| s.parse::<u64>()).transpose().map_err(|e| {
-            ProtocolError::MalformedTag {
+        let weight = optional(tags, "weight")
+            .map(|s| s.parse::<u64>())
+            .transpose()
+            .map_err(|e| ProtocolError::MalformedTag {
                 tag: "weight",
                 detail: format!("u64 parse: {e}"),
-            }
-        })?;
+            })?;
         let evidence = optional(tags, "evidence").map(str::to_string);
         let market = optional(tags, "market").map(str::to_string);
         let method = optional(tags, "method").map(str::to_string);
@@ -186,7 +190,10 @@ mod tests {
             vec!["score".into(), "150".into()], // out of bounds
         ];
         let err = Reputation::from_event(KIND_REPUTATION, &tags, "").unwrap_err();
-        assert!(matches!(err, ProtocolError::MalformedTag { tag: "score", .. }));
+        assert!(matches!(
+            err,
+            ProtocolError::MalformedTag { tag: "score", .. }
+        ));
     }
 
     #[test]

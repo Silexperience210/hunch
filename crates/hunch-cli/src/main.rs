@@ -23,13 +23,18 @@ use secp256k1::{Keypair, Secp256k1, SecretKey};
 use serde_json::{json, Value};
 
 #[derive(Parser)]
-#[command(name = "hunch", version, about = "Hunch — permissionless prediction markets on Bitcoin")]
+#[command(
+    name = "hunch",
+    version,
+    about = "Hunch — permissionless prediction markets on Bitcoin"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)] // clap subcommand enum; boxing would fight the derive
 enum Command {
     /// Generate a new creator identity key (does not touch the network).
     Keygen,
@@ -86,6 +91,7 @@ enum OrderCmd {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)] // clap subcommand enum; boxing would fight the derive
 enum MarketCmd {
     /// Build, sign (kind 30888), and publish a market.
     Create {
@@ -179,7 +185,8 @@ impl KeyArgs {
             anyhow::bail!("no secret key: pass --secret, --secret-file, or set HUNCH_SECRET");
         };
         let bytes = hex::decode(&hexkey).context("secret key is not valid hex")?;
-        let sk = SecretKey::from_slice(&bytes).context("secret key is not a valid secp256k1 scalar")?;
+        let sk =
+            SecretKey::from_slice(&bytes).context("secret key is not a valid secp256k1 scalar")?;
         Ok(Keypair::from_secret_key(&Secp256k1::new(), &sk))
     }
 }
@@ -190,8 +197,11 @@ impl NetArgs {
             return Ok(self.relays.clone());
         }
         if let Ok(env) = std::env::var("HUNCH_RELAYS") {
-            let list: Vec<String> =
-                env.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+            let list: Vec<String> = env
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
             if !list.is_empty() {
                 return Ok(list);
             }
@@ -206,8 +216,21 @@ async fn main() -> Result<()> {
         Command::Keygen => keygen(),
         Command::Market { cmd } => match cmd {
             MarketCmd::Create {
-                key, net, slug, oracle, expiry, refund_timeout, mint, dlc_contract, question,
-                resolution, sources, rules_version, category, image, topics,
+                key,
+                net,
+                slug,
+                oracle,
+                expiry,
+                refund_timeout,
+                mint,
+                dlc_contract,
+                question,
+                resolution,
+                sources,
+                rules_version,
+                category,
+                image,
+                topics,
             } => {
                 let keypair = key.keypair()?;
                 let creator_pubkey = hex::encode(keypair.x_only_public_key().0.serialize());
@@ -228,8 +251,14 @@ async fn main() -> Result<()> {
                     topics,
                 })?;
                 let (tags, content) = market.to_event_parts()?;
-                let event =
-                    build_signed_event(&Secp256k1::new(), &keypair, KIND_MARKET, tags, content, now());
+                let event = build_signed_event(
+                    &Secp256k1::new(),
+                    &keypair,
+                    KIND_MARKET,
+                    tags,
+                    content,
+                    now(),
+                );
 
                 eprintln!("market id: {}", market_id(&creator_pubkey, &slug));
                 broadcast(&net, &event, "market").await?;
@@ -242,14 +271,41 @@ async fn main() -> Result<()> {
             }
         },
         Command::Order { cmd } => match cmd {
-            OrderCmd::Place { key, net, market, side, amount, price, kind, expires } => {
+            OrderCmd::Place {
+                key,
+                net,
+                market,
+                side,
+                amount,
+                price,
+                kind,
+                expires,
+            } => {
                 let keypair = key.keypair()?;
-                let order = build_order(OrderParams { market, side, amount, price, kind, expires })?;
+                let order = build_order(OrderParams {
+                    market,
+                    side,
+                    amount,
+                    price,
+                    kind,
+                    expires,
+                })?;
                 let tags = order_tags_with_d(&order);
-                let event = build_signed_event(&Secp256k1::new(), &keypair, KIND_ORDER, tags, String::new(), now());
+                let event = build_signed_event(
+                    &Secp256k1::new(),
+                    &keypair,
+                    KIND_ORDER,
+                    tags,
+                    String::new(),
+                    now(),
+                );
                 eprintln!(
                     "order: {} {} {} sat @ {} sat/token on {}",
-                    order.kind.as_str(), order.side.as_str(), order.amount, order.price, order.market
+                    order.kind.as_str(),
+                    order.side.as_str(),
+                    order.amount,
+                    order.price,
+                    order.market
                 );
                 broadcast(&net, &event, "order").await?;
             }
@@ -298,7 +354,10 @@ fn keygen() {
     let keypair = Keypair::from_secret_key(&secp, &sk);
     eprintln!("⚠  SAVE THIS SECRET KEY OFFLINE. Anyone with it can post markets as you.");
     println!("secret: {}", hex::encode(sk.secret_bytes()));
-    println!("pubkey: {}", hex::encode(keypair.x_only_public_key().0.serialize()));
+    println!(
+        "pubkey: {}",
+        hex::encode(keypair.x_only_public_key().0.serialize())
+    );
 }
 
 fn print_markets(events: Vec<Value>) {
@@ -318,7 +377,9 @@ fn print_markets(events: Vec<Value>) {
                 println!("  id:      {id}");
                 println!(
                     "  oracle:  {}…  expiry: {}  refund: {}",
-                    short(&m.oracle_pubkey), m.expiry, m.refund_timeout
+                    short(&m.oracle_pubkey),
+                    m.expiry,
+                    m.refund_timeout
                 );
                 println!("  mint:    {}", m.mint);
                 if !m.topics.is_empty() {
@@ -328,7 +389,11 @@ fn print_markets(events: Vec<Value>) {
             Err(_) => skipped += 1,
         }
     }
-    eprintln!("\n{shown} market(s){}{}", count_note("unparseable", skipped), count_note("forged", forged));
+    eprintln!(
+        "\n{shown} market(s){}{}",
+        count_note("unparseable", skipped),
+        count_note("forged", forged)
+    );
 }
 
 fn print_orders(events: Vec<Value>, market: &str) {
@@ -349,18 +414,33 @@ fn print_orders(events: Vec<Value>, market: &str) {
     // but we keep it simple and sort all by price descending).
     orders.sort_by(|a, b| b.1.price.cmp(&a.1.price));
     println!("Order book for {market}\n");
-    println!("{:<5} {:<4} {:>12} {:>10}  author", "SIDE", "KIND", "AMOUNT(sat)", "PRICE");
+    println!(
+        "{:<5} {:<4} {:>12} {:>10}  author",
+        "SIDE", "KIND", "AMOUNT(sat)", "PRICE"
+    );
     for (author, o) in &orders {
         println!(
             "{:<5} {:<4} {:>12} {:>10}  {}…",
-            o.side.as_str(), o.kind.as_str(), o.amount, o.price, short(author)
+            o.side.as_str(),
+            o.kind.as_str(),
+            o.amount,
+            o.price,
+            short(author)
         );
     }
-    eprintln!("\n{} order(s){}", orders.len(), count_note("forged", forged));
+    eprintln!(
+        "\n{} order(s){}",
+        orders.len(),
+        count_note("forged", forged)
+    );
 }
 
 fn count_note(label: &str, n: usize) -> String {
-    if n > 0 { format!(", {n} {label} skipped") } else { String::new() }
+    if n > 0 {
+        format!(", {n} {label} skipped")
+    } else {
+        String::new()
+    }
 }
 
 fn short(hex_str: &str) -> &str {

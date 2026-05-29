@@ -83,10 +83,18 @@ mod tests {
         let tags = vec![
             vec!["d".into(), "hunch-mint-1".into()],
             vec!["endpoint".into(), "https://mint.hunch.markets".into()],
-            vec!["reserves_proof".into(), "https://mint.hunch.markets/reserves/2026-W22".into()],
-            vec!["supported_oracles".into(), format!("{},{}", "aa".repeat(32), "bb".repeat(32))],
+            vec![
+                "reserves_proof".into(),
+                "https://mint.hunch.markets/reserves/2026-W22".into(),
+            ],
+            vec![
+                "supported_oracles".into(),
+                format!("{},{}", "aa".repeat(32), "bb".repeat(32)),
+            ],
         ];
-        let m = MintAnnounce::from_event(KIND_MINT_ANNOUNCE, &tags, "{\"max_market_sat\":10000000}").unwrap();
+        let m =
+            MintAnnounce::from_event(KIND_MINT_ANNOUNCE, &tags, "{\"max_market_sat\":10000000}")
+                .unwrap();
         assert_eq!(m.supported_oracles.len(), 2);
         let (out_tags, out_content) = m.to_event_parts();
         let m2 = MintAnnounce::from_event(KIND_MINT_ANNOUNCE, &out_tags, &out_content).unwrap();
@@ -98,7 +106,10 @@ mod tests {
         let tags = vec![
             vec!["d".into(), "hunch-mint-1".into()],
             vec!["endpoint".into(), "https://mint.hunch.markets".into()],
-            vec!["reserves_proof".into(), "https://mint.hunch.markets/reserves/2026-W22".into()],
+            vec![
+                "reserves_proof".into(),
+                "https://mint.hunch.markets/reserves/2026-W22".into(),
+            ],
             vec!["supported_oracles".into(), "not-hex".into()],
         ];
         assert!(MintAnnounce::from_event(KIND_MINT_ANNOUNCE, &tags, "").is_err());

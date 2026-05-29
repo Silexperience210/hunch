@@ -59,12 +59,19 @@ pub fn build_outcome_token(
     ])
     .to_string();
 
-    Ok(OutcomeToken { outcome, lock_pubkey, secret })
+    Ok(OutcomeToken {
+        outcome,
+        lock_pubkey,
+        secret,
+    })
 }
 
 /// Derives the spend secret `b + s_X` that unlocks the winning token, from the bettor's secret
 /// and the oracle's attestation signature (kind:89). Thin wrapper over `hunch_dlc`.
-pub fn redeem_spend_secret(bettor_secret_hex: &str, attestation_signature_hex: &str) -> Result<String> {
+pub fn redeem_spend_secret(
+    bettor_secret_hex: &str,
+    attestation_signature_hex: &str,
+) -> Result<String> {
     outcome_unlock_secret(bettor_secret_hex, attestation_signature_hex)
 }
 
@@ -107,8 +114,14 @@ mod tests {
 
     fn token(outcome: Outcome) -> OutcomeToken {
         build_outcome_token(
-            &bettor_pub(), &bettor_pub(), &xonly(ORACLE), &xonly(NONCE), &market(), outcome,
-            1_800_000_000, &"ab".repeat(16),
+            &bettor_pub(),
+            &bettor_pub(),
+            &xonly(ORACLE),
+            &xonly(NONCE),
+            &market(),
+            outcome,
+            1_800_000_000,
+            &"ab".repeat(16),
         )
         .unwrap()
     }
@@ -126,8 +139,12 @@ mod tests {
         assert_eq!(v[0], "P2PK");
         assert_eq!(v[1]["data"], t.lock_pubkey);
         let tags = v[1]["tags"].as_array().unwrap();
-        assert!(tags.iter().any(|tg| tg[0] == "refund" && tg[1] == bettor_pub()));
-        assert!(tags.iter().any(|tg| tg[0] == "locktime" && tg[1] == "1800000000"));
+        assert!(tags
+            .iter()
+            .any(|tg| tg[0] == "refund" && tg[1] == bettor_pub()));
+        assert!(tags
+            .iter()
+            .any(|tg| tg[0] == "locktime" && tg[1] == "1800000000"));
     }
 
     #[test]
@@ -138,8 +155,14 @@ mod tests {
         // Oracle attests YES.
         let spend = redeem_spend_secret(BETTOR, &attest(Outcome::Yes)).unwrap();
 
-        assert!(verify_token_unlock(&yes.secret, &spend).unwrap(), "YES token must redeem");
-        assert!(!verify_token_unlock(&no.secret, &spend).unwrap(), "NO token must NOT redeem");
+        assert!(
+            verify_token_unlock(&yes.secret, &spend).unwrap(),
+            "YES token must redeem"
+        );
+        assert!(
+            !verify_token_unlock(&no.secret, &spend).unwrap(),
+            "NO token must NOT redeem"
+        );
     }
 
     #[test]

@@ -67,7 +67,10 @@ mod tests {
     fn parse_and_roundtrip() {
         let tags = vec![
             vec!["d".into(), "d-001".into()],
-            vec!["market".into(), format!("{}:30888:btc-100k", "aa".repeat(32))],
+            vec![
+                "market".into(),
+                format!("{}:30888:btc-100k", "aa".repeat(32)),
+            ],
             vec!["attestation".into(), "ev-deadbeef".into()],
             vec!["claim".into(), "oracle_misread".into()],
         ];

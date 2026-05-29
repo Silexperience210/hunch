@@ -176,11 +176,22 @@ mod tests {
     use super::*;
 
     fn order(side: OrderSide, kind: OrderKind, amount: u64, price: u64) -> Order {
-        Order { market: "m".into(), side, amount, price, kind, expires: 1_000_000 }
+        Order {
+            market: "m".into(),
+            side,
+            amount,
+            price,
+            kind,
+            expires: 1_000_000,
+        }
     }
 
     fn bo(author: &str, side: OrderSide, kind: OrderKind, amount: u64, price: u64) -> BookOrder {
-        BookOrder { author: author.into(), event_id: format!("ev-{author}-{price}"), order: order(side, kind, amount, price) }
+        BookOrder {
+            author: author.into(),
+            event_id: format!("ev-{author}-{price}"),
+            order: order(side, kind, amount, price),
+        }
     }
 
     #[test]
@@ -192,7 +203,14 @@ mod tests {
         let m = match_book(&orders, 100, 0);
         assert_eq!(m.len(), 1);
         match &m[0] {
-            Match::Direct { amount, price, buyer, seller, side, .. } => {
+            Match::Direct {
+                amount,
+                price,
+                buyer,
+                seller,
+                side,
+                ..
+            } => {
                 assert_eq!(*amount, 6_000); // min of 10k bid / 6k ask
                 assert_eq!(*price, 65); // ask (maker) price
                 assert_eq!(buyer, "alice");
@@ -230,7 +248,14 @@ mod tests {
         let m = match_book(&orders, 100, 0);
         assert_eq!(m.len(), 1);
         match &m[0] {
-            Match::Complementary { amount, price_yes, price_no, yes_buyer, no_buyer, .. } => {
+            Match::Complementary {
+                amount,
+                price_yes,
+                price_no,
+                yes_buyer,
+                no_buyer,
+                ..
+            } => {
                 assert_eq!(*amount, 5_000);
                 assert_eq!(*price_yes, 60);
                 assert_eq!(*price_no, 45); // 60 + 45 = 105 >= 100
@@ -269,7 +294,13 @@ mod tests {
         let m = match_book(&orders, 100, 0);
         // bid 10k fills 4k @60 (bob) then 4k @65 (carol); 2k remains unfilled.
         assert_eq!(m.len(), 2);
-        let total: u64 = m.iter().map(|x| match x { Match::Direct { amount, .. } => *amount, _ => 0 }).sum();
+        let total: u64 = m
+            .iter()
+            .map(|x| match x {
+                Match::Direct { amount, .. } => *amount,
+                _ => 0,
+            })
+            .sum();
         assert_eq!(total, 8_000);
     }
 }

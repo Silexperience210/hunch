@@ -33,7 +33,9 @@ pub struct MarketParams {
 /// Builds and validates a [`Market`]. Validation runs the protocol's own `from_event` over the
 /// serialized form, so a market that builds here is guaranteed to parse on the other side.
 pub fn build_market(p: MarketParams) -> Result<Market> {
-    let refund_timeout = p.refund_timeout.unwrap_or_else(|| p.expiry.saturating_add(SEVEN_DAYS));
+    let refund_timeout = p
+        .refund_timeout
+        .unwrap_or_else(|| p.expiry.saturating_add(SEVEN_DAYS));
     let dlc_contract: DlcOutpoint = p
         .dlc_contract
         .parse()
@@ -60,7 +62,8 @@ pub fn build_market(p: MarketParams) -> Result<Market> {
 
     // Round-trip through the protocol validator before we ever sign or publish it.
     let (tags, content) = market.to_event_parts().context("serializing market")?;
-    Market::from_event(KIND_MARKET, &tags, &content).context("market failed protocol validation")?;
+    Market::from_event(KIND_MARKET, &tags, &content)
+        .context("market failed protocol validation")?;
     Ok(market)
 }
 
@@ -76,8 +79,14 @@ pub fn tags_from_event(ev: &Value) -> Vec<Vec<String>> {
 
 /// Parses a kind:30888 Nostr event into `(market_id, Market)`.
 pub fn parse_market_event(ev: &Value) -> Result<(String, Market)> {
-    let kind = ev.get("kind").and_then(Value::as_u64).context("event missing kind")? as u32;
-    let pubkey = ev.get("pubkey").and_then(Value::as_str).context("event missing pubkey")?;
+    let kind = ev
+        .get("kind")
+        .and_then(Value::as_u64)
+        .context("event missing kind")? as u32;
+    let pubkey = ev
+        .get("pubkey")
+        .and_then(Value::as_str)
+        .context("event missing pubkey")?;
     let content = ev.get("content").and_then(Value::as_str).unwrap_or("");
     let tags = tags_from_event(ev);
     let market = Market::from_event(kind, &tags, content)?;
@@ -122,8 +131,14 @@ pub fn order_tags_with_d(order: &Order) -> Vec<Vec<String>> {
 
 /// Parses a kind:38888 Nostr event into `(author_pubkey, Order)`.
 pub fn parse_order_event(ev: &Value) -> Result<(String, Order)> {
-    let kind = ev.get("kind").and_then(Value::as_u64).context("event missing kind")? as u32;
-    let pubkey = ev.get("pubkey").and_then(Value::as_str).context("event missing pubkey")?;
+    let kind = ev
+        .get("kind")
+        .and_then(Value::as_u64)
+        .context("event missing kind")? as u32;
+    let pubkey = ev
+        .get("pubkey")
+        .and_then(Value::as_str)
+        .context("event missing pubkey")?;
     let order = Order::from_event(kind, &tags_from_event(ev))?;
     Ok((pubkey.to_string(), order))
 }

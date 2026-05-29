@@ -13,7 +13,11 @@ use hunch_protocol::event_kinds::KIND_ORDER;
 use serde_json::json;
 
 #[derive(Parser)]
-#[command(name = "hunch-matcher", version, about = "Hunch Tier-2 P2P order matcher (advisory)")]
+#[command(
+    name = "hunch-matcher",
+    version,
+    about = "Hunch Tier-2 P2P order matcher (advisory)"
+)]
 struct Cli {
     /// Market id to match: `<creator_pubkey>:30888:<d>`.
     #[arg(long)]
@@ -48,20 +52,47 @@ async fn main() -> Result<()> {
     let matches = match_book(&orders, cli.face_value, now);
 
     println!("Market   {}", cli.market);
-    println!("Orders   {} live (face value {} sat/token)\n", orders.len(), cli.face_value);
+    println!(
+        "Orders   {} live (face value {} sat/token)\n",
+        orders.len(),
+        cli.face_value
+    );
     if matches.is_empty() {
         println!("No compatible matches.");
         return Ok(());
     }
     for m in &matches {
         match m {
-            Match::Direct { side, amount, price, buyer, seller, .. } => println!(
+            Match::Direct {
+                side,
+                amount,
+                price,
+                buyer,
+                seller,
+                ..
+            } => println!(
                 "DIRECT       {:<3} {:>8} tokens @ {:>4} sat   buyer {}… ← seller {}…",
-                side.as_str(), amount, price, short(buyer), short(seller)
+                side.as_str(),
+                amount,
+                price,
+                short(buyer),
+                short(seller)
             ),
-            Match::Complementary { amount, price_yes, price_no, yes_buyer, no_buyer, .. } => println!(
+            Match::Complementary {
+                amount,
+                price_yes,
+                price_no,
+                yes_buyer,
+                no_buyer,
+                ..
+            } => println!(
                 "COMPLEMENT   {:>8} pairs  YES@{} + NO@{} = {}   yes {}…  no {}…",
-                amount, price_yes, price_no, price_yes + price_no, short(yes_buyer), short(no_buyer)
+                amount,
+                price_yes,
+                price_no,
+                price_yes + price_no,
+                short(yes_buyer),
+                short(no_buyer)
             ),
         }
     }
@@ -74,8 +105,11 @@ fn resolve_relays(relays: &[String]) -> Result<Vec<String>> {
         return Ok(relays.to_vec());
     }
     if let Ok(env) = std::env::var("HUNCH_RELAYS") {
-        let list: Vec<String> =
-            env.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        let list: Vec<String> = env
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
         if !list.is_empty() {
             return Ok(list);
         }

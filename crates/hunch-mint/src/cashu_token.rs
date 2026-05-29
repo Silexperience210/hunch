@@ -30,7 +30,11 @@ pub fn p2pk_secret(lock_pubkey_hex: &str) -> Result<Secret> {
 /// winners redeem via the outcome path immediately; losers / INVALID reclaim via the refund path
 /// after the timeout. `refund_timeout` must be in the future (NUT-11 `Conditions::new` rejects a
 /// past locktime).
-pub fn outcome_secret(lock_pubkey_hex: &str, refund_pubkey_hex: &str, refund_timeout: u64) -> Result<Secret> {
+pub fn outcome_secret(
+    lock_pubkey_hex: &str,
+    refund_pubkey_hex: &str,
+    refund_timeout: u64,
+) -> Result<Secret> {
     let lock = PublicKey::from_hex(lock_pubkey_hex).context("invalid lock pubkey hex")?;
     let refund = PublicKey::from_hex(refund_pubkey_hex).context("invalid refund pubkey hex")?;
     let conditions = Conditions::new(
@@ -66,7 +70,11 @@ pub fn p2pk_proof(amount_sat: u64, lock_pubkey_hex: &str) -> Result<Proof> {
 ///
 /// This runs both the wallet and mint roles in-process (no Lightning) — a deployment splits them
 /// across the wire. It exists to prove that a blind-signed Hunch token redeems correctly.
-pub fn issue_via_bdhke(mint_secret: &cashu::nuts::SecretKey, amount_sat: u64, secret: Secret) -> Result<Proof> {
+pub fn issue_via_bdhke(
+    mint_secret: &cashu::nuts::SecretKey,
+    amount_sat: u64,
+    secret: Secret,
+) -> Result<Proof> {
     use cashu::dhke::{blind_message, sign_message, unblind_message, verify_message};
 
     let mint_pubkey = mint_secret.public_key();
@@ -78,7 +86,8 @@ pub fn issue_via_bdhke(mint_secret: &cashu::nuts::SecretKey, amount_sat: u64, se
     let c = unblind_message(&blind_sig, &r, &mint_pubkey).context("unblinding")?;
 
     // The unblinded signature must verify under the mint key (NUT-00).
-    verify_message(mint_secret, c, &secret_bytes).context("issued token failed mint verification")?;
+    verify_message(mint_secret, c, &secret_bytes)
+        .context("issued token failed mint verification")?;
 
     let keyset_id = cashu::nuts::Id::from_str("009a1f293253e41e").context("keyset id")?;
     Ok(Proof::new(Amount::from(amount_sat), keyset_id, secret, c))
@@ -98,7 +107,12 @@ mod tests {
 
     fn xonly(secret_hex: &str) -> String {
         let sk = SSecretKey::from_slice(&hex::decode(secret_hex).unwrap()).unwrap();
-        hex::encode(Keypair::from_secret_key(&Secp256k1::new(), &sk).x_only_public_key().0.serialize())
+        hex::encode(
+            Keypair::from_secret_key(&Secp256k1::new(), &sk)
+                .x_only_public_key()
+                .0
+                .serialize(),
+        )
     }
     fn bettor_pub() -> String {
         let sk = SSecretKey::from_slice(&hex::decode(BETTOR).unwrap()).unwrap();
@@ -108,7 +122,14 @@ mod tests {
         format!("{}:30888:m", "aa".repeat(32))
     }
     fn lock(outcome: Outcome) -> String {
-        outcome_lock_key(&bettor_pub(), &xonly(ORACLE), &xonly(NONCE), &market(), outcome).unwrap()
+        outcome_lock_key(
+            &bettor_pub(),
+            &xonly(ORACLE),
+            &xonly(NONCE),
+            &market(),
+            outcome,
+        )
+        .unwrap()
     }
     fn attest(outcome: Outcome) -> String {
         let o: [u8; 32] = hex::decode(ORACLE).unwrap().try_into().unwrap();
@@ -133,7 +154,9 @@ mod tests {
         let l_yes = outcome_unlock_secret(BETTOR, &attest(Outcome::Yes)).unwrap();
         let sk = SecretKey::from_hex(&l_yes).unwrap();
         proof.sign_p2pk(sk).unwrap();
-        proof.verify_p2pk().expect("YES token must verify under real cashu NUT-11");
+        proof
+            .verify_p2pk()
+            .expect("YES token must verify under real cashu NUT-11");
     }
 
     #[test]
@@ -143,17 +166,23 @@ mod tests {
         let l_yes = outcome_unlock_secret(BETTOR, &attest(Outcome::Yes)).unwrap();
         let sk = SecretKey::from_hex(&l_yes).unwrap();
         no_proof.sign_p2pk(sk).unwrap();
-        assert!(no_proof.verify_p2pk().is_err(), "YES key must not spend the NO token");
+        assert!(
+            no_proof.verify_p2pk().is_err(),
+            "YES key must not spend the NO token"
+        );
     }
 
     fn now() -> u64 {
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
     }
 
     // --- Refund / INVALID branch (NUT-11 locktime + refund), against real cashu ---
 
     fn proof_with_secret(secret: Secret) -> Proof {
-        let c = PublicKey::from_hex(&lock(Outcome::Yes)).unwrap();
+        let c = PublicKey::from_hex(lock(Outcome::Yes)).unwrap();
         let id = cashu::nuts::Id::from_str("009a1f293253e41e").unwrap();
         Proof::new(Amount::from(1000u64), id, secret, c)
     }
@@ -164,8 +193,12 @@ mod tests {
         let secret = outcome_secret(&lock(Outcome::Yes), &bettor_pub(), now() + 1_000_000).unwrap();
         let mut proof = proof_with_secret(secret);
         let l_yes = outcome_unlock_secret(BETTOR, &attest(Outcome::Yes)).unwrap();
-        proof.sign_p2pk(SecretKey::from_hex(&l_yes).unwrap()).unwrap();
-        proof.verify_p2pk().expect("winner spends the outcome path regardless of locktime");
+        proof
+            .sign_p2pk(SecretKey::from_hex(&l_yes).unwrap())
+            .unwrap();
+        proof
+            .verify_p2pk()
+            .expect("winner spends the outcome path regardless of locktime");
     }
 
     #[test]
@@ -174,8 +207,13 @@ mod tests {
         // outcome key either), so neither NUT-11 path is satisfied.
         let secret = outcome_secret(&lock(Outcome::Yes), &bettor_pub(), now() + 1_000_000).unwrap();
         let mut proof = proof_with_secret(secret);
-        proof.sign_p2pk(SecretKey::from_hex(BETTOR).unwrap()).unwrap();
-        assert!(proof.verify_p2pk().is_err(), "refund key must not spend before locktime");
+        proof
+            .sign_p2pk(SecretKey::from_hex(BETTOR).unwrap())
+            .unwrap();
+        assert!(
+            proof.verify_p2pk().is_err(),
+            "refund key must not spend before locktime"
+        );
     }
 
     #[test]
@@ -189,16 +227,20 @@ mod tests {
         let mut proof = issue_via_bdhke(&mint_key, 1000, secret).expect("BDHKE issuance");
 
         let l_yes = outcome_unlock_secret(BETTOR, &attest(Outcome::Yes)).unwrap();
-        proof.sign_p2pk(SecretKey::from_hex(&l_yes).unwrap()).unwrap();
-        proof.verify_p2pk().expect("a blind-issued token redeems via the outcome path");
+        proof
+            .sign_p2pk(SecretKey::from_hex(&l_yes).unwrap())
+            .unwrap();
+        proof
+            .verify_p2pk()
+            .expect("a blind-issued token redeems via the outcome path");
     }
 
     #[test]
     fn refund_key_spends_after_locktime() {
         // Past locktime (built via struct literal to bypass new()'s future-locktime check):
         // the refund branch is active and the bettor's key reclaims the token (INVALID / silence).
-        let lock_pk = PublicKey::from_hex(&lock(Outcome::Yes)).unwrap();
-        let refund_pk = PublicKey::from_hex(&bettor_pub()).unwrap();
+        let lock_pk = PublicKey::from_hex(lock(Outcome::Yes)).unwrap();
+        let refund_pk = PublicKey::from_hex(bettor_pub()).unwrap();
         let conditions = Conditions {
             locktime: Some(1),
             pubkeys: None,
@@ -207,9 +249,15 @@ mod tests {
             sig_flag: SigFlag::SigInputs,
             num_sigs_refund: None,
         };
-        let secret: Secret = SpendingConditions::new_p2pk(lock_pk, Some(conditions)).try_into().unwrap();
+        let secret: Secret = SpendingConditions::new_p2pk(lock_pk, Some(conditions))
+            .try_into()
+            .unwrap();
         let mut proof = proof_with_secret(secret);
-        proof.sign_p2pk(SecretKey::from_hex(BETTOR).unwrap()).unwrap();
-        proof.verify_p2pk().expect("refund key spends after locktime (HIP-2 refund / INVALID)");
+        proof
+            .sign_p2pk(SecretKey::from_hex(BETTOR).unwrap())
+            .unwrap();
+        proof
+            .verify_p2pk()
+            .expect("refund key spends after locktime (HIP-2 refund / INVALID)");
     }
 }

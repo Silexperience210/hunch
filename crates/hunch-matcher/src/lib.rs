@@ -28,7 +28,11 @@ pub fn book_orders_from_events(events: &[Value], market: &str) -> Vec<BookOrder>
             if order.market != market {
                 return None;
             }
-            Some(BookOrder { author, event_id, order })
+            Some(BookOrder {
+                author,
+                event_id,
+                order,
+            })
         })
         .collect()
 }
@@ -66,7 +70,11 @@ mod tests {
         forged["sig"] = json!("00".repeat(64));
 
         let parsed = book_orders_from_events(&[good, other_market, forged], &market);
-        assert_eq!(parsed.len(), 1, "only the genuine order for this market survives");
+        assert_eq!(
+            parsed.len(),
+            1,
+            "only the genuine order for this market survives"
+        );
         assert_eq!(parsed[0].order.price, 70);
     }
 }

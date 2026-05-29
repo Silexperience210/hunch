@@ -105,20 +105,36 @@ impl Order {
         }
         let market = required(tags, "market")?.to_string();
         let side = required(tags, "side")?.parse()?;
-        let amount = required(tags, "amount")?.parse::<u64>().map_err(|e| ProtocolError::MalformedTag {
-            tag: "amount",
-            detail: format!("u64 parse: {e}"),
-        })?;
-        let price = required(tags, "price")?.parse::<u64>().map_err(|e| ProtocolError::MalformedTag {
-            tag: "price",
-            detail: format!("u64 parse: {e}"),
-        })?;
+        let amount =
+            required(tags, "amount")?
+                .parse::<u64>()
+                .map_err(|e| ProtocolError::MalformedTag {
+                    tag: "amount",
+                    detail: format!("u64 parse: {e}"),
+                })?;
+        let price =
+            required(tags, "price")?
+                .parse::<u64>()
+                .map_err(|e| ProtocolError::MalformedTag {
+                    tag: "price",
+                    detail: format!("u64 parse: {e}"),
+                })?;
         let kind = required(tags, "kind")?.parse()?;
-        let expires = required(tags, "expires")?.parse::<u64>().map_err(|e| ProtocolError::MalformedTag {
-            tag: "expires",
-            detail: format!("u64 parse: {e}"),
-        })?;
-        Ok(Order { market, side, amount, price, kind, expires })
+        let expires =
+            required(tags, "expires")?
+                .parse::<u64>()
+                .map_err(|e| ProtocolError::MalformedTag {
+                    tag: "expires",
+                    detail: format!("u64 parse: {e}"),
+                })?;
+        Ok(Order {
+            market,
+            side,
+            amount,
+            price,
+            kind,
+            expires,
+        })
     }
 
     pub fn to_tags(&self) -> Vec<TagTuple> {
@@ -146,7 +162,10 @@ mod tests {
 
     fn sample() -> Vec<TagTuple> {
         vec![
-            vec!["market".into(), format!("{}:30888:btc-100k", "aa".repeat(32))],
+            vec![
+                "market".into(),
+                format!("{}:30888:btc-100k", "aa".repeat(32)),
+            ],
             vec!["side".into(), "YES".into()],
             vec!["amount".into(), "10000".into()],
             vec!["price".into(), "73".into()],

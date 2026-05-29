@@ -131,7 +131,8 @@ impl OracleAttestation {
         let sig_bytes = hex::decode(&self.signature_hex)?;
         let sig = Signature::from_slice(&sig_bytes)?;
         let digest = sha256_digest(&Self::signing_message(&self.market, self.outcome));
-        secp.verify_schnorr(&sig, &digest, pubkey).map_err(Into::into)
+        secp.verify_schnorr(&sig, &digest, pubkey)
+            .map_err(Into::into)
     }
 }
 
@@ -145,7 +146,11 @@ pub trait OracleSigner {
     fn pubkey(&self) -> XOnlyPublicKey;
 
     /// Sign the canonical `(market, outcome)` message and produce the attestation.
-    fn sign_attestation(&self, market: &str, outcome: Outcome) -> Result<OracleAttestation, ProtocolError>;
+    fn sign_attestation(
+        &self,
+        market: &str,
+        outcome: Outcome,
+    ) -> Result<OracleAttestation, ProtocolError>;
 }
 
 /// Single-key Schnorr signer for v1 oracles (HIP-4 §Parameters: implementations MAY
@@ -181,7 +186,11 @@ impl OracleSigner for SingleKeySigner {
         XOnlyPublicKey::from(pk)
     }
 
-    fn sign_attestation(&self, market: &str, outcome: Outcome) -> Result<OracleAttestation, ProtocolError> {
+    fn sign_attestation(
+        &self,
+        market: &str,
+        outcome: Outcome,
+    ) -> Result<OracleAttestation, ProtocolError> {
         let secp = Secp256k1::new();
         let digest = sha256_digest(&OracleAttestation::signing_message(market, outcome));
         let sig = secp.sign_schnorr_no_aux_rand(&digest, &self.keypair);
@@ -258,10 +267,14 @@ mod tests {
     #[test]
     fn announce_parse_and_roundtrip() {
         let tags = vec![
-            vec!["market".into(), format!("{}:30888:btc-100k", "aa".repeat(32))],
+            vec![
+                "market".into(),
+                format!("{}:30888:btc-100k", "aa".repeat(32)),
+            ],
             vec!["nonce".into(), "bb".repeat(32)],
         ];
-        let a = OracleAnnounce::from_event(KIND_ORACLE_ANNOUNCE, &tags, "Resolves on CB feed").unwrap();
+        let a =
+            OracleAnnounce::from_event(KIND_ORACLE_ANNOUNCE, &tags, "Resolves on CB feed").unwrap();
         let (out_tags, out_content) = a.to_event_parts();
         let a2 = OracleAnnounce::from_event(KIND_ORACLE_ANNOUNCE, &out_tags, &out_content).unwrap();
         assert_eq!(a, a2);

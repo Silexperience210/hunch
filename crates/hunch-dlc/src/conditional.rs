@@ -37,19 +37,29 @@ pub fn outcome_lock_key(
     market: &str,
     outcome: Outcome,
 ) -> Result<String> {
-    let s_x_hex = signature_point(oracle_pubkey_xonly_hex, nonce_pubkey_xonly_hex, market, outcome)?;
+    let s_x_hex = signature_point(
+        oracle_pubkey_xonly_hex,
+        nonce_pubkey_xonly_hex,
+        market,
+        outcome,
+    )?;
     let s_x = zkp::PublicKey::from_slice(&hex::decode(s_x_hex)?).context("sig point invalid")?;
     let bettor = zkp::PublicKey::from_slice(
         &hex::decode(bettor_pubkey_compressed_hex).context("bettor pubkey hex")?,
     )
     .context("bettor pubkey must be a 33-byte compressed secp256k1 point")?;
-    let lock = bettor.combine(&s_x).map_err(|e| anyhow::anyhow!("combining B + S_X: {e}"))?;
+    let lock = bettor
+        .combine(&s_x)
+        .map_err(|e| anyhow::anyhow!("combining B + S_X: {e}"))?;
     Ok(hex::encode(lock.serialize()))
 }
 
 /// Derives the spend secret `l = b + s_X` from the bettor's secret and the oracle's attestation
 /// signature. `s_X` is the scalar half (last 32 bytes) of the 64-byte BIP-340 signature.
-pub fn outcome_unlock_secret(bettor_secret_hex: &str, attestation_signature_hex: &str) -> Result<String> {
+pub fn outcome_unlock_secret(
+    bettor_secret_hex: &str,
+    attestation_signature_hex: &str,
+) -> Result<String> {
     let sig = hex::decode(attestation_signature_hex.trim()).context("attestation sig hex")?;
     if sig.len() != 64 {
         anyhow::bail!("attestation signature must be 64 bytes, got {}", sig.len());
@@ -61,14 +71,17 @@ pub fn outcome_unlock_secret(bettor_secret_hex: &str, attestation_signature_hex:
     )
     .context("bettor secret invalid")?;
     let tweak = zkp::Scalar::from_be_bytes(s_x).context("s_X is not a valid scalar")?;
-    let spend = bettor.add_tweak(&tweak).map_err(|e| anyhow::anyhow!("b + s_X: {e}"))?;
+    let spend = bettor
+        .add_tweak(&tweak)
+        .map_err(|e| anyhow::anyhow!("b + s_X: {e}"))?;
     Ok(hex::encode(spend.secret_bytes()))
 }
 
 /// Returns true iff `spend_secret·G == lock_key`, i.e. the secret can sign for the lock.
 pub fn verify_unlock(spend_secret_hex: &str, lock_key_compressed_hex: &str) -> Result<bool> {
     let secp = zkp::Secp256k1::new();
-    let sk = zkp::SecretKey::from_slice(&hex::decode(spend_secret_hex.trim())?).context("spend secret invalid")?;
+    let sk = zkp::SecretKey::from_slice(&hex::decode(spend_secret_hex.trim())?)
+        .context("spend secret invalid")?;
     let pk = zkp::PublicKey::from_secret_key(&secp, &sk);
     Ok(hex::encode(pk.serialize()) == lock_key_compressed_hex.trim())
 }
@@ -99,38 +112,65 @@ mod tests {
     #[test]
     fn winning_outcome_attestation_unlocks_its_token() {
         let market = format!("{}:30888:m", "aa".repeat(32));
-        let lock_yes =
-            outcome_lock_key(&bettor_compressed(), &xonly(ORACLE), &xonly(NONCE), &market, Outcome::Yes).unwrap();
+        let lock_yes = outcome_lock_key(
+            &bettor_compressed(),
+            &xonly(ORACLE),
+            &xonly(NONCE),
+            &market,
+            Outcome::Yes,
+        )
+        .unwrap();
 
         // Oracle attests YES → reveals s_YES.
         let oracle_secret: [u8; 32] = hex::decode(ORACLE).unwrap().try_into().unwrap();
         let nonce_secret: [u8; 32] = hex::decode(NONCE).unwrap().try_into().unwrap();
-        let sig = sign_attestation_with_nonce(&oracle_secret, &nonce_secret, &market, Outcome::Yes).unwrap();
+        let sig = sign_attestation_with_nonce(&oracle_secret, &nonce_secret, &market, Outcome::Yes)
+            .unwrap();
 
         let spend = outcome_unlock_secret(BETTOR, &sig).unwrap();
-        assert!(verify_unlock(&spend, &lock_yes).unwrap(), "YES attestation must unlock the YES token");
+        assert!(
+            verify_unlock(&spend, &lock_yes).unwrap(),
+            "YES attestation must unlock the YES token"
+        );
     }
 
     #[test]
     fn winning_attestation_does_not_unlock_other_outcome_tokens() {
         let market = format!("{}:30888:m", "aa".repeat(32));
-        let lock_no =
-            outcome_lock_key(&bettor_compressed(), &xonly(ORACLE), &xonly(NONCE), &market, Outcome::No).unwrap();
+        let lock_no = outcome_lock_key(
+            &bettor_compressed(),
+            &xonly(ORACLE),
+            &xonly(NONCE),
+            &market,
+            Outcome::No,
+        )
+        .unwrap();
 
         // Oracle attests YES; the revealed s_YES must NOT unlock the NO token.
         let oracle_secret: [u8; 32] = hex::decode(ORACLE).unwrap().try_into().unwrap();
         let nonce_secret: [u8; 32] = hex::decode(NONCE).unwrap().try_into().unwrap();
-        let sig_yes = sign_attestation_with_nonce(&oracle_secret, &nonce_secret, &market, Outcome::Yes).unwrap();
+        let sig_yes =
+            sign_attestation_with_nonce(&oracle_secret, &nonce_secret, &market, Outcome::Yes)
+                .unwrap();
 
         let spend = outcome_unlock_secret(BETTOR, &sig_yes).unwrap();
-        assert!(!verify_unlock(&spend, &lock_no).unwrap(), "YES attestation must NOT unlock the NO token");
+        assert!(
+            !verify_unlock(&spend, &lock_no).unwrap(),
+            "YES attestation must NOT unlock the NO token"
+        );
     }
 
     #[test]
     fn lock_key_is_33_byte_compressed() {
         let market = format!("{}:30888:m", "aa".repeat(32));
-        let lock =
-            outcome_lock_key(&bettor_compressed(), &xonly(ORACLE), &xonly(NONCE), &market, Outcome::Yes).unwrap();
+        let lock = outcome_lock_key(
+            &bettor_compressed(),
+            &xonly(ORACLE),
+            &xonly(NONCE),
+            &market,
+            Outcome::Yes,
+        )
+        .unwrap();
         assert_eq!(hex::decode(&lock).unwrap().len(), 33);
     }
 

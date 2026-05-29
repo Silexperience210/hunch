@@ -18,7 +18,11 @@ use hunch_oracle::{generate_keypair, nonce_store::NonceStore, OracleService};
 use hunch_protocol::outcome::Outcome;
 
 #[derive(Parser)]
-#[command(name = "hunch-oracle", version, about = "Hunch single-key oracle daemon (NIP-88 over Nostr)")]
+#[command(
+    name = "hunch-oracle",
+    version,
+    about = "Hunch single-key oracle daemon (NIP-88 over Nostr)"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -108,7 +112,11 @@ impl NetArgs {
             return Ok(self.relays.clone());
         }
         if let Ok(env) = std::env::var("HUNCH_ORACLE_RELAYS") {
-            let list: Vec<String> = env.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+            let list: Vec<String> = env
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
             if !list.is_empty() {
                 return Ok(list);
             }
@@ -123,7 +131,9 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::Keygen => {
             let (secret, pubkey) = generate_keypair();
-            eprintln!("⚠  SAVE THIS SECRET KEY OFFLINE. Anyone with it controls this oracle identity.");
+            eprintln!(
+                "⚠  SAVE THIS SECRET KEY OFFLINE. Anyone with it controls this oracle identity."
+            );
             eprintln!("⚠  Do not commit it, paste it, or store it unencrypted.");
             println!("secret: {secret}");
             println!("pubkey: {pubkey}");
@@ -132,7 +142,12 @@ async fn main() -> Result<()> {
             let oracle = key.oracle()?;
             println!("{}", oracle.pubkey_hex());
         }
-        Command::Announce { key, net, market, body } => {
+        Command::Announce {
+            key,
+            net,
+            market,
+            body,
+        } => {
             let oracle = key.oracle()?;
             // The oracle owns its nonce: generate + persist R for this market (idempotent).
             let mut store = NonceStore::load(&net.nonce_store)?;
@@ -142,7 +157,12 @@ async fn main() -> Result<()> {
             let event = oracle.build_announce_event(&market, &nonce.pubkey, &body, created_at)?;
             broadcast(&net, &event).await?;
         }
-        Command::Attest { key, net, market, outcome } => {
+        Command::Attest {
+            key,
+            net,
+            market,
+            outcome,
+        } => {
             let oracle = key.oracle()?;
             // Load the nonce committed at announce time; the store refuses a conflicting reuse.
             let mut store = NonceStore::load(&net.nonce_store)?;
