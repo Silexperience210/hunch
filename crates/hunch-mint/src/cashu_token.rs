@@ -12,15 +12,39 @@
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
-use cashu::nuts::{Proof, PublicKey, SpendingConditions};
+use cashu::nuts::{Conditions, Proof, PublicKey, SigFlag, SpendingConditions};
 use cashu::secret::Secret;
 use cashu::Amount;
 
-/// Builds the real Cashu NUT-11 secret for an outcome token locked to `lock_pubkey_hex` (`L_X`).
+/// Builds the real Cashu NUT-11 secret for an outcome token locked to `lock_pubkey_hex` (`L_X`),
+/// with no refund branch (core OUTCOME_MATCH only).
 pub fn p2pk_secret(lock_pubkey_hex: &str) -> Result<Secret> {
     let pubkey = PublicKey::from_hex(lock_pubkey_hex).context("invalid lock pubkey hex")?;
     let conditions = SpendingConditions::new_p2pk(pubkey, None);
     let secret: Secret = conditions.try_into().context("building NUT-11 secret")?;
+    Ok(secret)
+}
+
+/// Builds the full HIP-3 outcome-token secret: P2PK to `lock_pubkey_hex` (`L_X`) with a NUT-11
+/// refund branch (`refund` key spendable after `refund_timeout`). This is the production form —
+/// winners redeem via the outcome path immediately; losers / INVALID reclaim via the refund path
+/// after the timeout. `refund_timeout` must be in the future (NUT-11 `Conditions::new` rejects a
+/// past locktime).
+pub fn outcome_secret(lock_pubkey_hex: &str, refund_pubkey_hex: &str, refund_timeout: u64) -> Result<Secret> {
+    let lock = PublicKey::from_hex(lock_pubkey_hex).context("invalid lock pubkey hex")?;
+    let refund = PublicKey::from_hex(refund_pubkey_hex).context("invalid refund pubkey hex")?;
+    let conditions = Conditions::new(
+        Some(refund_timeout),
+        None,
+        Some(vec![refund]),
+        None,
+        Some(SigFlag::SigInputs),
+        None,
+    )
+    .context("building NUT-11 refund conditions")?;
+    let secret: Secret = SpendingConditions::new_p2pk(lock, Some(conditions))
+        .try_into()
+        .context("building NUT-11 secret")?;
     Ok(secret)
 }
 
@@ -95,5 +119,57 @@ mod tests {
         let sk = SecretKey::from_hex(&l_yes).unwrap();
         no_proof.sign_p2pk(sk).unwrap();
         assert!(no_proof.verify_p2pk().is_err(), "YES key must not spend the NO token");
+    }
+
+    fn now() -> u64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+    }
+
+    // --- Refund / INVALID branch (NUT-11 locktime + refund), against real cashu ---
+
+    fn proof_with_secret(secret: Secret) -> Proof {
+        let c = PublicKey::from_hex(&lock(Outcome::Yes)).unwrap();
+        let id = cashu::nuts::Id::from_str("009a1f293253e41e").unwrap();
+        Proof::new(Amount::from(1000u64), id, secret, c)
+    }
+
+    #[test]
+    fn winner_redeems_via_outcome_path_despite_future_locktime() {
+        // Full token: outcome lock + refund branch with a far-future timeout.
+        let secret = outcome_secret(&lock(Outcome::Yes), &bettor_pub(), now() + 1_000_000).unwrap();
+        let mut proof = proof_with_secret(secret);
+        let l_yes = outcome_unlock_secret(BETTOR, &attest(Outcome::Yes)).unwrap();
+        proof.sign_p2pk(SecretKey::from_hex(&l_yes).unwrap()).unwrap();
+        proof.verify_p2pk().expect("winner spends the outcome path regardless of locktime");
+    }
+
+    #[test]
+    fn refund_key_cannot_spend_before_locktime() {
+        // Future locktime: the bettor's refund key alone must NOT spend yet (and it isn't the
+        // outcome key either), so neither NUT-11 path is satisfied.
+        let secret = outcome_secret(&lock(Outcome::Yes), &bettor_pub(), now() + 1_000_000).unwrap();
+        let mut proof = proof_with_secret(secret);
+        proof.sign_p2pk(SecretKey::from_hex(BETTOR).unwrap()).unwrap();
+        assert!(proof.verify_p2pk().is_err(), "refund key must not spend before locktime");
+    }
+
+    #[test]
+    fn refund_key_spends_after_locktime() {
+        // Past locktime (built via struct literal to bypass new()'s future-locktime check):
+        // the refund branch is active and the bettor's key reclaims the token (INVALID / silence).
+        let lock_pk = PublicKey::from_hex(&lock(Outcome::Yes)).unwrap();
+        let refund_pk = PublicKey::from_hex(&bettor_pub()).unwrap();
+        let conditions = Conditions {
+            locktime: Some(1),
+            pubkeys: None,
+            refund_keys: Some(vec![refund_pk]),
+            num_sigs: None,
+            sig_flag: SigFlag::SigInputs,
+            num_sigs_refund: None,
+        };
+        let secret: Secret = SpendingConditions::new_p2pk(lock_pk, Some(conditions)).try_into().unwrap();
+        let mut proof = proof_with_secret(secret);
+        proof.sign_p2pk(SecretKey::from_hex(BETTOR).unwrap()).unwrap();
+        proof.verify_p2pk().expect("refund key spends after locktime (HIP-2 refund / INVALID)");
     }
 }
