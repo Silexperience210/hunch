@@ -5,7 +5,27 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Hunch oracle with NIP-88 + FROST k-of-n threshold Schnorr (Phase 1: stub; impl in Phase 2 per HIP-4)"
+description = "Hunch oracle daemon — NIP-88 announce/attestation over Nostr, single-key Schnorr (v1). FROST k-of-n threshold deferred to Phase 4 per HIP-4."
+
+[lib]
+name = "hunch_oracle"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hunch-oracle"
+path = "src/main.rs"
 
 [dependencies]
+hunch-protocol = { path = "../hunch-protocol" }
 serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+sha2.workspace = true
+tokio = { workspace = true }
+secp256k1 = { version = "0.30", features = ["global-context", "rand"] }
+hex = "0.4"
+rand = "0.8"
+clap = { version = "4", features = ["derive", "env"] }
+tokio-tungstenite = { version = "0.29", features = ["connect", "rustls-tls-webpki-roots"] }
+futures-util = "0.3"
