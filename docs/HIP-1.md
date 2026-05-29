@@ -33,7 +33,7 @@ Hunch is discovery-, attestation-, and reputation-routed through Nostr. Defining
 | 88     | Regular                 | Oracle Announce   | Oracle declares intent to attest a market outcome (see NIP-88)         |
 | 89     | Regular                 | Oracle Attestation| Oracle Schnorr signature over the market outcome (see NIP-88)          |
 | 30888  | Parameterized Replaceable | Market          | Market metadata: question, outcome enum, oracle pubkey, refund timeout |
-| 38888  | Ephemeral               | Order             | Bet order: market reference, side YES/NO, amount, price                |
+| 38888  | Parameterized Replaceable | Order           | Bet order: market reference, side YES/NO, amount, price                |
 | 30890  | Parameterized Replaceable | Dispute         | Dispute filing: market reference, claim, evidence URL                  |
 | 30891  | Parameterized Replaceable | Reputation      | Reputation attestation: target pubkey, scope, score                    |
 | 30892  | Parameterized Replaceable | Mint Announce   | Mint identity, supported markets, reserves proof URL                   |
@@ -74,9 +74,12 @@ A JSON object describing the question:
 
 ### Kind 38888 — Order
 
-Ephemeral event posted to Tier 2 P2P matching relays. Not stored beyond relay TTL.
+A parameterized-replaceable event (kind range 30000–39999) posted to Tier 2 P2P matching relays. The `d` tag makes the order addressable, so a pubkey keeps **one outstanding order per market** (re-posting replaces the prior order) and relays can filter by `#d`.
+
+> **Corrigendum:** earlier drafts of this table labeled kind 38888 "Ephemeral". That was a documentation error — 38888 is in the 30000–39999 parameterized-replaceable range per NIP-01. The reference implementation (`hunch-protocol`, `hunch-relay`) treats it as parameterized-replaceable.
 
 **Required tags:**
+- `d` — set to the `market` identifier (addressability / one order per pubkey per market)
 - `market` — market identifier (`<pubkey>:30888:<d>`)
 - `side` — `YES` or `NO`
 - `amount` — token amount (sat)
@@ -84,7 +87,7 @@ Ephemeral event posted to Tier 2 P2P matching relays. Not stored beyond relay TT
 - `kind` — `bid` or `ask`
 - `expires` — UNIX timestamp order expires
 
-**Content:** Empty or signed counter-party fields (per HIP-3 Tier 2 matching spec).
+**Content:** Empty.
 
 ### Kind 30890 — Dispute
 
