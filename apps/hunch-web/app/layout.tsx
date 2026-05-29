@@ -20,6 +20,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <span style={{ color: "var(--muted)" }} className="text-xs">
             prediction markets on Bitcoin · trust the math
           </span>
+          <a href="/create/" className="text-xs ml-auto">
+            + create market
+          </a>
         </header>
         <main className="px-6 py-6 max-w-4xl mx-auto">{children}</main>
         <footer style={{ color: "var(--muted)" }} className="px-6 py-8 text-xs max-w-4xl mx-auto">
