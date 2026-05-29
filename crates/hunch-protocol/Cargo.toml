@@ -5,8 +5,12 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Hunch protocol — shared types and HIP reference types (Phase 1: stub)"
+description = "Hunch protocol — shared types implementing HIP-1..5 (Nostr event kinds, DLC outcomes, FROST signer trait, reputation)"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+secp256k1 = { version = "0.30", features = ["serde", "global-context", "rand"] }
+hex = "0.4"
