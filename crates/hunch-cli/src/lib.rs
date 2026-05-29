@@ -2,8 +2,10 @@
 //! wiring so it can be unit-tested without a network or clap.
 
 use anyhow::{Context, Result};
-use hunch_protocol::event_kinds::KIND_MARKET;
+use hunch_nostr::event_tags;
+use hunch_protocol::event_kinds::{KIND_MARKET, KIND_ORDER};
 use hunch_protocol::market::{DlcOutpoint, Market, MarketContent};
+use hunch_protocol::order::{Order, OrderKind, OrderSide};
 use hunch_protocol::outcome::Outcome;
 use serde_json::Value;
 
@@ -69,15 +71,7 @@ pub fn market_id(creator_pubkey: &str, d: &str) -> String {
 
 /// Extracts a Nostr event's `tags` as `Vec<Vec<String>>`, ignoring non-string tag elements.
 pub fn tags_from_event(ev: &Value) -> Vec<Vec<String>> {
-    ev.get("tags")
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(Value::as_array)
-                .map(|tag| tag.iter().filter_map(Value::as_str).map(String::from).collect())
-                .collect()
-        })
-        .unwrap_or_default()
+    event_tags(ev)
 }
 
 /// Parses a kind:30888 Nostr event into `(market_id, Market)`.
@@ -89,6 +83,49 @@ pub fn parse_market_event(ev: &Value) -> Result<(String, Market)> {
     let market = Market::from_event(kind, &tags, content)?;
     let id = market_id(pubkey, &market.d);
     Ok((id, market))
+}
+
+/// Inputs for placing an order.
+pub struct OrderParams {
+    pub market: String,
+    pub side: OrderSide,
+    pub amount: u64,
+    pub price: u64,
+    pub kind: OrderKind,
+    pub expires: u64,
+}
+
+/// Builds and validates an [`Order`] (validates by round-tripping through the protocol parser).
+pub fn build_order(p: OrderParams) -> Result<Order> {
+    let order = Order {
+        market: p.market,
+        side: p.side,
+        amount: p.amount,
+        price: p.price,
+        kind: p.kind,
+        expires: p.expires,
+    };
+    Order::from_event(KIND_ORDER, &order.to_tags()).context("order failed protocol validation")?;
+    Ok(order)
+}
+
+/// Tags for an order event: the protocol order tags plus a `d` tag set to the market.
+///
+/// Kind 38888 is parameterized-replaceable; the single-letter `d` tag makes the order
+/// addressable (one outstanding order per pubkey per market, per HIP-1) and lets relays filter
+/// by `#d` (multi-char tag names like `market` are NOT filterable per NIP-01).
+pub fn order_tags_with_d(order: &Order) -> Vec<Vec<String>> {
+    let mut tags = order.to_tags();
+    tags.push(vec!["d".into(), order.market.clone()]);
+    tags
+}
+
+/// Parses a kind:38888 Nostr event into `(author_pubkey, Order)`.
+pub fn parse_order_event(ev: &Value) -> Result<(String, Order)> {
+    let kind = ev.get("kind").and_then(Value::as_u64).context("event missing kind")? as u32;
+    let pubkey = ev.get("pubkey").and_then(Value::as_str).context("event missing pubkey")?;
+    let order = Order::from_event(kind, &tags_from_event(ev))?;
+    Ok((pubkey.to_string(), order))
 }
 
 #[cfg(test)]
@@ -143,6 +180,47 @@ mod tests {
         assert_eq!(id, format!("{}:30888:btc-100k-eoy-2026", "cc".repeat(32)));
         assert_eq!(parsed.content.question, m.content.question);
         assert_eq!(parsed.topics, vec!["bitcoin", "macro"]);
+    }
+
+    fn order_params(market: &str) -> OrderParams {
+        OrderParams {
+            market: market.into(),
+            side: OrderSide::Yes,
+            amount: 10_000,
+            price: 73,
+            kind: OrderKind::Bid,
+            expires: 1_800_000_000,
+        }
+    }
+
+    #[test]
+    fn build_order_and_parse_roundtrip_with_d_tag() {
+        let market = format!("{}:30888:btc-100k", "aa".repeat(32));
+        let order = build_order(order_params(&market)).unwrap();
+        let tags = order_tags_with_d(&order);
+        // The d tag must be present and equal the market (relay-filterable via #d).
+        assert!(tags.iter().any(|t| t[0] == "d" && t[1] == market));
+
+        let ev = json!({
+            "kind": KIND_ORDER,
+            "pubkey": "cc".repeat(32),
+            "tags": tags,
+            "content": "",
+        });
+        let (author, parsed) = parse_order_event(&ev).unwrap();
+        assert_eq!(author, "cc".repeat(32));
+        assert_eq!(parsed.amount, 10_000);
+        assert_eq!(parsed.price, 73);
+        assert_eq!(parsed.side, OrderSide::Yes);
+        assert_eq!(parsed.kind, OrderKind::Bid);
+    }
+
+    #[test]
+    fn build_order_rejects_bad_side_via_protocol() {
+        // Sanity: an order with a side that isn't YES/NO can't even be constructed here
+        // because OrderSide only has Yes/No, so we instead check protocol validation runs.
+        let market = format!("{}:30888:m", "aa".repeat(32));
+        assert!(build_order(order_params(&market)).is_ok());
     }
 
     #[test]

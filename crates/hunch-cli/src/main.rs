@@ -12,11 +12,15 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
-use hunch_cli::{build_market, market_id, parse_market_event, MarketParams};
-use hunch_nostr::{build_signed_event, query_all, relay};
-use hunch_protocol::event_kinds::KIND_MARKET;
+use hunch_cli::{
+    build_market, build_order, market_id, order_tags_with_d, parse_market_event, parse_order_event,
+    MarketParams, OrderParams,
+};
+use hunch_nostr::{build_signed_event, query_all, relay, verify_event};
+use hunch_protocol::event_kinds::{KIND_MARKET, KIND_ORDER};
+use hunch_protocol::order::{OrderKind, OrderSide};
 use secp256k1::{Keypair, Secp256k1, SecretKey};
-use serde_json::json;
+use serde_json::{json, Value};
 
 #[derive(Parser)]
 #[command(name = "hunch", version, about = "Hunch — permissionless prediction markets on Bitcoin")]
@@ -33,6 +37,51 @@ enum Command {
     Market {
         #[command(subcommand)]
         cmd: MarketCmd,
+    },
+    /// Place or list orders on a market.
+    Order {
+        #[command(subcommand)]
+        cmd: OrderCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OrderCmd {
+    /// Sign (kind 38888) and publish an order on a market.
+    Place {
+        #[command(flatten)]
+        key: KeyArgs,
+        #[command(flatten)]
+        net: NetArgs,
+        /// Market id: `<creator_pubkey>:30888:<d>`.
+        #[arg(long)]
+        market: String,
+        /// Side: YES or NO.
+        #[arg(long)]
+        side: OrderSide,
+        /// Token amount in sat.
+        #[arg(long)]
+        amount: u64,
+        /// Price in sat per token.
+        #[arg(long)]
+        price: u64,
+        /// Order kind: bid or ask.
+        #[arg(long)]
+        kind: OrderKind,
+        /// Expiry (unix seconds).
+        #[arg(long)]
+        expires: u64,
+    },
+    /// Query relays for a market's orders (kind 38888) and print the book.
+    List {
+        #[command(flatten)]
+        net: NetArgs,
+        /// Market id to list orders for.
+        #[arg(long)]
+        market: String,
+        /// Maximum orders to request per relay.
+        #[arg(long, default_value_t = 200)]
+        limit: u64,
     },
 }
 
@@ -183,29 +232,7 @@ async fn main() -> Result<()> {
                     build_signed_event(&Secp256k1::new(), &keypair, KIND_MARKET, tags, content, now());
 
                 eprintln!("market id: {}", market_id(&creator_pubkey, &slug));
-                println!("{}", serde_json::to_string_pretty(&event)?);
-
-                if net.dry_run {
-                    eprintln!("(dry-run: not published)");
-                    return Ok(());
-                }
-                let relays = net.relay_list()?;
-                let results = relay::publish_all(&relays, &event, Duration::from_secs(net.timeout)).await;
-                let mut accepted = 0usize;
-                for (url, res) in &results {
-                    match res {
-                        Ok(o) if o.accepted => {
-                            accepted += 1;
-                            eprintln!("✔ {url}: accepted {}", o.message);
-                        }
-                        Ok(o) => eprintln!("✗ {url}: rejected {}", o.message),
-                        Err(e) => eprintln!("✗ {url}: {e:#}"),
-                    }
-                }
-                eprintln!("published to {accepted}/{} relays", relays.len());
-                if accepted == 0 {
-                    anyhow::bail!("no relay accepted the market");
-                }
+                broadcast(&net, &event, "market").await?;
             }
             MarketCmd::List { net, limit } => {
                 let relays = net.relay_list()?;
@@ -214,6 +241,53 @@ async fn main() -> Result<()> {
                 print_markets(events);
             }
         },
+        Command::Order { cmd } => match cmd {
+            OrderCmd::Place { key, net, market, side, amount, price, kind, expires } => {
+                let keypair = key.keypair()?;
+                let order = build_order(OrderParams { market, side, amount, price, kind, expires })?;
+                let tags = order_tags_with_d(&order);
+                let event = build_signed_event(&Secp256k1::new(), &keypair, KIND_ORDER, tags, String::new(), now());
+                eprintln!(
+                    "order: {} {} {} sat @ {} sat/token on {}",
+                    order.kind.as_str(), order.side.as_str(), order.amount, order.price, order.market
+                );
+                broadcast(&net, &event, "order").await?;
+            }
+            OrderCmd::List { net, market, limit } => {
+                let relays = net.relay_list()?;
+                // `d` == market, and `d` is single-letter so relays can filter it (#d).
+                let filter = json!({ "kinds": [KIND_ORDER], "#d": [market], "limit": limit });
+                let events = query_all(&relays, filter, Duration::from_secs(net.timeout)).await;
+                print_orders(events, &market);
+            }
+        },
+    }
+    Ok(())
+}
+
+/// Prints the event, then either stops (`--dry-run`) or publishes to all relays.
+async fn broadcast(net: &NetArgs, event: &Value, what: &str) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(event)?);
+    if net.dry_run {
+        eprintln!("(dry-run: not published)");
+        return Ok(());
+    }
+    let relays = net.relay_list()?;
+    let results = relay::publish_all(&relays, event, Duration::from_secs(net.timeout)).await;
+    let mut accepted = 0usize;
+    for (url, res) in &results {
+        match res {
+            Ok(o) if o.accepted => {
+                accepted += 1;
+                eprintln!("✔ {url}: accepted {}", o.message);
+            }
+            Ok(o) => eprintln!("✗ {url}: rejected {}", o.message),
+            Err(e) => eprintln!("✗ {url}: {e:#}"),
+        }
+    }
+    eprintln!("published to {accepted}/{} relays", relays.len());
+    if accepted == 0 {
+        anyhow::bail!("no relay accepted the {what}");
     }
     Ok(())
 }
@@ -227,10 +301,16 @@ fn keygen() {
     println!("pubkey: {}", hex::encode(keypair.x_only_public_key().0.serialize()));
 }
 
-fn print_markets(events: Vec<serde_json::Value>) {
+fn print_markets(events: Vec<Value>) {
     let mut shown = 0usize;
     let mut skipped = 0usize;
+    let mut forged = 0usize;
     for ev in &events {
+        // Relays are untrusted: drop any event whose id/signature doesn't check out.
+        if !verify_event(ev) {
+            forged += 1;
+            continue;
+        }
         match parse_market_event(ev) {
             Ok((id, m)) => {
                 shown += 1;
@@ -248,10 +328,39 @@ fn print_markets(events: Vec<serde_json::Value>) {
             Err(_) => skipped += 1,
         }
     }
-    eprintln!(
-        "\n{shown} market(s){}",
-        if skipped > 0 { format!(", {skipped} unparseable skipped") } else { String::new() }
-    );
+    eprintln!("\n{shown} market(s){}{}", count_note("unparseable", skipped), count_note("forged", forged));
+}
+
+fn print_orders(events: Vec<Value>, market: &str) {
+    let mut orders: Vec<(String, hunch_protocol::order::Order)> = Vec::new();
+    let mut forged = 0usize;
+    for ev in &events {
+        if !verify_event(ev) {
+            forged += 1;
+            continue;
+        }
+        if let Ok((author, order)) = parse_order_event(ev) {
+            if order.market == market {
+                orders.push((author, order));
+            }
+        }
+    }
+    // Order book: best price first within each side (bids high→low, asks low→high is conventional,
+    // but we keep it simple and sort all by price descending).
+    orders.sort_by(|a, b| b.1.price.cmp(&a.1.price));
+    println!("Order book for {market}\n");
+    println!("{:<5} {:<4} {:>12} {:>10}  author", "SIDE", "KIND", "AMOUNT(sat)", "PRICE");
+    for (author, o) in &orders {
+        println!(
+            "{:<5} {:<4} {:>12} {:>10}  {}…",
+            o.side.as_str(), o.kind.as_str(), o.amount, o.price, short(author)
+        );
+    }
+    eprintln!("\n{} order(s){}", orders.len(), count_note("forged", forged));
+}
+
+fn count_note(label: &str, n: usize) -> String {
+    if n > 0 { format!(", {n} {label} skipped") } else { String::new() }
 }
 
 fn short(hex_str: &str) -> &str {
