@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { KIND_MARKET, parseMarketEvent, type Market } from "@/lib/hunch";
 import { DEFAULT_RELAYS, queryRelays } from "@/lib/relay";
 import { verifyEvent } from "@/lib/verify";
+import Link from "next/link";
 
 export default function MarketsPage() {
   const [relaysInput, setRelaysInput] = useState(DEFAULT_RELAYS.join(", "));
@@ -71,15 +72,15 @@ export default function MarketsPage() {
             style={{ background: "var(--card)", border: "1px solid var(--border)" }}
           >
             <div className="flex items-baseline justify-between gap-3">
-              <a href={`/market/?id=${encodeURIComponent(m.id)}`} className="font-bold" style={{ color: "var(--fg)" }}>
+              <Link href={`/market/?id=${encodeURIComponent(m.id)}`} className="font-bold" style={{ color: "var(--fg)" }}>
                 {m.content.question}
-              </a>
-              <a
+              </Link>
+              <Link
                 href={`/bet/?id=${encodeURIComponent(m.id)}&oracle=${encodeURIComponent(m.oracle)}`}
                 className="text-xs shrink-0"
               >
                 bet →
-              </a>
+              </Link>
             </div>
             <div style={{ color: "var(--muted)" }} className="text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1">
               <span>oracle {m.oracle.slice(0, 12)}…</span>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { buildMarketTemplate } from "@/lib/build";
 import { marketId } from "@/lib/hunch";
 import { getPublicKey, signTemplate } from "@/lib/sign";
@@ -60,7 +61,7 @@ export default function CreateMarketPage() {
 
   return (
     <div className="flex flex-col gap-3 max-w-2xl">
-      <a href="/" className="text-sm">← markets</a>
+      <Link href="/" className="text-sm">← markets</Link>
       <h1 className="font-bold">Create a market</h1>
       <p style={{ color: "var(--muted)" }} className="text-xs">
         Signed with your Nostr extension (NIP-07). Anyone can create any market — read the

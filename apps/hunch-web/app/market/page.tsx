@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { KIND_ORDER, parseOrderEvent, type Order } from "@/lib/hunch";
 import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
 import { DEFAULT_RELAYS, queryRelays } from "@/lib/relay";
@@ -130,9 +131,9 @@ function MarketView() {
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <a href="/" className="text-sm">
+        <Link href="/" className="text-sm">
           ← markets
-        </a>
+        </Link>
         <h1 className="text-sm mt-2 break-all" style={{ color: "var(--muted)" }}>
           {id}
         </h1>

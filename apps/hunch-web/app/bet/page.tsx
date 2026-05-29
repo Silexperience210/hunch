@@ -2,6 +2,7 @@
 
 import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import type { Wallet } from "@cashu/cashu-ts";
 import { compressedPubkey, outcomeLockKey, outcomeUnlockSecret, randomBettorSecret } from "@/lib/dlc";
 import { connect, depositQuote, mintLocked, payWithWebln, redeem, waitPaid } from "@/lib/wallet";
@@ -90,7 +91,7 @@ function BetView() {
 
   return (
     <div className="flex flex-col gap-3 max-w-2xl">
-      <a href="/" className="text-sm">← markets</a>
+      <Link href="/" className="text-sm">← markets</Link>
       <h1 className="font-bold">Bet (mint conditional tokens)</h1>
       <p style={{ color: "var(--muted)" }} className="text-xs">
         Mints Cashu tokens locked to the oracle outcome (NUT-11 P2PK to L = B + S_X). Spendable only

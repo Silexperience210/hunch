@@ -1,0 +1,53 @@
+name: deploy-web
+
+# Builds the static hunch-web site and publishes it to GitHub Pages.
+# One-time setup: repo Settings → Pages → Source = "GitHub Actions".
+# Served at https://<owner>.github.io/hunch/ (basePath /hunch). Root hosts
+# (Cloudflare Pages / IPFS / Tor) can deploy apps/hunch-web/out with NO base path.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/hunch-web/**"
+      - ".github/workflows/deploy-web.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Build static export
+        working-directory: apps/hunch-web
+        env:
+          NEXT_PUBLIC_BASE_PATH: /hunch
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          touch out/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/hunch-web/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

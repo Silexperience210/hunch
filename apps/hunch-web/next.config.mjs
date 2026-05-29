@@ -5,6 +5,9 @@ const nextConfig = {
   output: "export",
   images: { unoptimized: true },
   trailingSlash: true,
+  // For GitHub Pages project subpath (e.g. /hunch). Empty for root hosts (Cloudflare/IPFS/Tor).
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || undefined,
+  assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH || undefined,
   // Keep type-checking (real safety); skip lint to avoid an eslint-config setup in CI.
   eslint: { ignoreDuringBuilds: true },
 };
