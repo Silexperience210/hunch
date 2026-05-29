@@ -25,6 +25,7 @@
 //!
 //! None of those require a protocol change, which is the whole point of the NUT-11 pivot.
 
+pub mod cashu_token;
 pub mod token;
 
 pub use token::{build_outcome_token, redeem_spend_secret, verify_token_unlock, OutcomeToken};

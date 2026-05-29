@@ -18,6 +18,7 @@ serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 hex = "0.4"
+cashu = "0.16"
 
 [dev-dependencies]
 secp256k1 = { version = "0.30", features = ["global-context"] }
