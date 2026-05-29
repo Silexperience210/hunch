@@ -1,0 +1,63 @@
+name: mint-e2e
+
+# Live end-to-end test of the Hunch conditional-token flow against a real running cdk-mintd.
+# Runs on Linux (where protoc + cdk-mintd build cleanly, unlike the dev's Windows box).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "crates/hunch-mint/**"
+      - "crates/hunch-dlc/**"
+      - ".github/workflows/mint-e2e.yml"
+
+jobs:
+  e2e:
+    name: cdk-mintd e2e (fakewallet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Cache cargo + cdk-mintd binary
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cdk-mintd
+            target
+          key: minte2e-${{ runner.os }}-cdk0.16-${{ hashFiles('**/Cargo.toml') }}
+
+      - name: Install cdk-mintd (fakewallet, no gRPC backends)
+        run: |
+          if [ ! -x "$HOME/.cargo/bin/cdk-mintd" ]; then
+            cargo install cdk-mintd --version 0.16.0 \
+              --no-default-features --features "fakewallet,sqlite,info-page"
+          fi
+
+      - name: Configure the mint
+        run: |
+          mkdir -p "$HOME/.cdk-mintd"
+          cp crates/hunch-mint/cdk-mintd.ci.toml "$HOME/.cdk-mintd/config.toml"
+
+      - name: Start cdk-mintd and run the e2e test
+        run: |
+          cdk-mintd > "$HOME/mintd.log" 2>&1 &
+          echo "waiting for mint to come up..."
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:8085/v1/info >/dev/null; then echo "mint up"; break; fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8085/v1/info >/dev/null || { echo "--- mintd.log ---"; cat "$HOME/mintd.log"; exit 1; }
+          HUNCH_MINT_URL=http://127.0.0.1:8085 cargo test -p hunch-mint --test e2e_mint -- --ignored --nocapture
+
+      - name: Mint logs (on failure)
+        if: failure()
+        run: cat "$HOME/mintd.log" || true

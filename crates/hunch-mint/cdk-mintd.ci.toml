@@ -1,0 +1,21 @@
+# cdk-mintd config for CI / local e2e — fakewallet backend, no Lightning, TEST ONLY.
+# Used by .github/workflows/mint-e2e.yml and runnable locally (see tests/e2e_mint.rs).
+[info]
+url = "http://127.0.0.1:8085/"
+listen_host = "127.0.0.1"
+listen_port = 8085
+# Well-known BIP39 test vector — NOT a real secret. Fakewallet issues no real value.
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+
+[mint_info]
+name = "Hunch CI mint (fakewallet)"
+description = "TEST ONLY — not real sats"
+
+[database]
+engine = "sqlite"
+
+[ln]
+ln_backend = "fakewallet"
+
+[info.http_cache]
+backend = "memory"
