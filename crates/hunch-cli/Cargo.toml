@@ -5,8 +5,18 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Hunch CLI (Phase 1: stub)"
+description = "Hunch CLI — create and list prediction markets over Nostr (HIP-1 kind 30888)."
 
 [[bin]]
 name = "hunch"
 path = "src/main.rs"
+
+[dependencies]
+hunch-protocol = { path = "../hunch-protocol" }
+hunch-nostr = { path = "../hunch-nostr" }
+anyhow.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true }
+clap = { version = "4", features = ["derive", "env"] }
+secp256k1 = { version = "0.30", features = ["global-context", "rand"] }
+hex = "0.4"
