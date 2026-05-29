@@ -5,6 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { KIND_ORDER, parseOrderEvent, type Order } from "@/lib/hunch";
 import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
 import { DEFAULT_RELAYS, queryRelays } from "@/lib/relay";
+import { buildOrderTemplate } from "@/lib/build";
+import { signTemplate } from "@/lib/sign";
+import { publishAll } from "@/lib/publish";
 
 function Column({ title, orders }: { title: string; orders: Order[] }) {
   return (
@@ -29,6 +32,62 @@ function Column({ title, orders }: { title: string; orders: Order[] }) {
         </ul>
       )}
     </div>
+  );
+}
+
+function OrderForm({ market, onPosted }: { market: string; onPosted: () => void }) {
+  const [side, setSide] = useState<"YES" | "NO">("YES");
+  const [kind, setKind] = useState<"bid" | "ask">("bid");
+  const [amount, setAmount] = useState("10000");
+  const [price, setPrice] = useState("50");
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
+
+  async function post() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const template = buildOrderTemplate({
+        market,
+        side,
+        kind,
+        amount: Number(amount),
+        price: Number(price),
+        expires: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+      });
+      const signed = await signTemplate(template);
+      const results = await publishAll(DEFAULT_RELAYS, signed);
+      const ok = results.filter((r) => r.accepted).length;
+      setStatus(`Published to ${ok}/${results.length} relays.`);
+      onPosted();
+    } catch (e) {
+      setStatus("Error: " + (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2" style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+      <div className="font-bold">Post an order</div>
+      <div className="flex gap-2 flex-wrap items-center text-sm">
+        <select style={field} className="px-2 py-2 rounded" value={side} onChange={(e) => setSide(e.target.value as any)}>
+          <option value="YES">YES</option>
+          <option value="NO">NO</option>
+        </select>
+        <select style={field} className="px-2 py-2 rounded" value={kind} onChange={(e) => setKind(e.target.value as any)}>
+          <option value="bid">bid (buy)</option>
+          <option value="ask">ask (sell)</option>
+        </select>
+        <input style={field} className="px-2 py-2 rounded w-28" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="amount sat" />
+        <input style={field} className="px-2 py-2 rounded w-24" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="price" />
+        <button onClick={post} disabled={busy} className="px-4 py-2 rounded font-bold" style={{ background: "var(--accent)", color: "#000" }}>
+          {busy ? "Signing…" : "Sign & post"}
+        </button>
+      </div>
+      {status && <p style={{ color: "var(--muted)" }} className="text-xs">{status}</p>}
+    </section>
   );
 }
 
@@ -108,6 +167,8 @@ function MarketView() {
           </section>
         </div>
       )}
+
+      {id && <OrderForm market={id} onPosted={load} />}
     </div>
   );
 }
