@@ -68,7 +68,9 @@ export default function MarketsPage() {
             className="p-4 rounded"
             style={{ background: "var(--card)", border: "1px solid var(--border)" }}
           >
-            <div className="font-bold">{m.content.question}</div>
+            <a href={`/market/?id=${encodeURIComponent(m.id)}`} className="font-bold" style={{ color: "var(--fg)" }}>
+              {m.content.question}
+            </a>
             <div style={{ color: "var(--muted)" }} className="text-xs mt-2 flex flex-wrap gap-x-4 gap-y-1">
               <span>oracle {m.oracle.slice(0, 12)}…</span>
               <span>expiry {new Date(m.expiry * 1000).toISOString().slice(0, 10)}</span>
