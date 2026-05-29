@@ -5,7 +5,23 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Hunch Tier-2 P2P order matcher (Phase 1: stub; impl in Phase 2)"
+description = "Hunch Tier-2 P2P order matcher — proposes compatible kind:38888 order matches (direct + complementary). No central engine, no settlement."
+
+[lib]
+name = "hunch_matcher"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hunch-matcher"
+path = "src/main.rs"
 
 [dependencies]
-serde.workspace = true
+hunch-protocol = { path = "../hunch-protocol" }
+hunch-nostr = { path = "../hunch-nostr" }
+serde_json.workspace = true
+anyhow.workspace = true
+tokio = { workspace = true }
+clap = { version = "4", features = ["derive", "env"] }
+
+[dev-dependencies]
+secp256k1 = { version = "0.30", features = ["global-context"] }
