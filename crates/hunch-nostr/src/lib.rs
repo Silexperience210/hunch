@@ -8,5 +8,5 @@
 pub mod event;
 pub mod relay;
 
-pub use event::{build_signed_event, event_id, Tag};
+pub use event::{build_signed_event, event_id, event_tags, verify_event, Tag};
 pub use relay::{publish, publish_all, query, query_all, PublishOutcome};

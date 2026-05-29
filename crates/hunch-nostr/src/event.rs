@@ -14,12 +14,57 @@
 //! form: no whitespace, those escapes for control characters, raw UTF-8 otherwise. The
 //! signature is a BIP-340 Schnorr signature over the 32-byte id.
 
-use secp256k1::{Keypair, Secp256k1, Signing};
+use secp256k1::{schnorr::Signature, Keypair, Secp256k1, Signing, XOnlyPublicKey};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 /// A Nostr tag: an ordered list of strings, first element is the tag name (`["e", "<id>"]`).
 pub type Tag = Vec<String>;
+
+/// Extracts a Nostr event's `tags` as `Vec<Tag>`, ignoring non-string tag elements.
+pub fn event_tags(ev: &Value) -> Vec<Tag> {
+    ev.get("tags")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_array)
+                .map(|tag| tag.iter().filter_map(Value::as_str).map(String::from).collect())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Verifies a Nostr event end-to-end: recomputes the NIP-01 id from its fields and checks it
+/// matches `ev.id`, then verifies the BIP-340 signature over that id under `ev.pubkey`.
+///
+/// Relays are untrusted — they can return forged or tampered events. Anything consumed from a
+/// relay (markets, orders, attestations) MUST pass this before being trusted.
+pub fn verify_event(ev: &Value) -> bool {
+    let (Some(id), Some(pubkey), Some(created_at), Some(kind), Some(sig)) = (
+        ev.get("id").and_then(Value::as_str),
+        ev.get("pubkey").and_then(Value::as_str),
+        ev.get("created_at").and_then(Value::as_i64),
+        ev.get("kind").and_then(Value::as_u64),
+        ev.get("sig").and_then(Value::as_str),
+    ) else {
+        return false;
+    };
+    let content = ev.get("content").and_then(Value::as_str).unwrap_or("");
+    let recomputed = event_id(pubkey, created_at, kind as u32, &event_tags(ev), content);
+    if hex::encode(recomputed) != id {
+        return false;
+    }
+    let (Ok(sig_bytes), Ok(pk_bytes)) = (hex::decode(sig), hex::decode(pubkey)) else {
+        return false;
+    };
+    let (Ok(sig), Ok(xonly)) = (Signature::from_slice(&sig_bytes), XOnlyPublicKey::from_slice(&pk_bytes))
+    else {
+        return false;
+    };
+    Secp256k1::verification_only()
+        .verify_schnorr(&sig, &recomputed, &xonly)
+        .is_ok()
+}
 
 /// Computes the NIP-01 event id (the 32-byte sha256 of the canonical serialization).
 pub fn event_id(pubkey_hex: &str, created_at: i64, kind: u32, tags: &[Tag], content: &str) -> [u8; 32] {
@@ -90,6 +135,33 @@ mod tests {
         let sig = Signature::from_slice(&hex::decode(event["sig"].as_str().unwrap()).unwrap()).unwrap();
         let xonly = XOnlyPublicKey::from_slice(&hex::decode(pubkey_hex).unwrap()).unwrap();
         secp.verify_schnorr(&sig, &recomputed, &xonly).unwrap();
+    }
+
+    #[test]
+    fn verify_event_accepts_genuine_and_rejects_tampered() {
+        let secp = Secp256k1::new();
+        let kp = test_keypair();
+        let mut ev = build_signed_event(&secp, &kp, 30888, vec![vec!["d".into(), "m".into()]], "hi".into(), 1_700_000_000);
+        assert!(verify_event(&ev));
+
+        // Tamper the content: id no longer matches → reject.
+        let mut tampered = ev.clone();
+        tampered["content"] = serde_json::json!("evil");
+        assert!(!verify_event(&tampered));
+
+        // Tamper the signature → reject.
+        ev["sig"] = serde_json::json!("00".repeat(64));
+        assert!(!verify_event(&ev));
+    }
+
+    #[test]
+    fn verify_event_rejects_forged_pubkey() {
+        // An event whose id/sig are valid for key A but relabeled with pubkey B must fail.
+        let secp = Secp256k1::new();
+        let ev = build_signed_event(&secp, &test_keypair(), 1, vec![], "x".into(), 1);
+        let mut forged = ev.clone();
+        forged["pubkey"] = serde_json::json!("bb".repeat(32));
+        assert!(!verify_event(&forged));
     }
 
     #[test]
