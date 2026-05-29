@@ -5,6 +5,8 @@ const nextConfig = {
   output: "export",
   images: { unoptimized: true },
   trailingSlash: true,
+  // Keep type-checking (real safety); skip lint to avoid an eslint-config setup in CI.
+  eslint: { ignoreDuringBuilds: true },
 };
 
 export default nextConfig;

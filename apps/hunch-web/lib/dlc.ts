@@ -68,6 +68,18 @@ export function outcomeLockKey(
   return B.add(sX).toHex(true);
 }
 
+/** Generates a fresh 32-byte bettor secret (hex). This is the Cashu wallet key, not the Nostr key. */
+export function randomBettorSecret(): string {
+  const b = new Uint8Array(32);
+  crypto.getRandomValues(b);
+  return bytesToHex(b);
+}
+
+/** Returns the 33-byte compressed pubkey (B) for a bettor secret hex. */
+export function compressedPubkey(secretHex: string): string {
+  return bytesToHex(secp256k1.getPublicKey(hexToBytes(secretHex.trim()), true));
+}
+
 /** Derives the spend secret l_X = (b + s_X) mod n from the bettor secret + attestation sig. */
 export function outcomeUnlockSecret(bettorSecretHex: string, attestationSigHex: string): string {
   const sig = hexToBytes(attestationSigHex.trim());
