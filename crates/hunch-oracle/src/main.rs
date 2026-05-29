@@ -13,7 +13,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
-use hunch_oracle::{generate_keypair, nonce_store::NonceStore, relay, OracleService};
+use hunch_nostr::relay;
+use hunch_oracle::{generate_keypair, nonce_store::NonceStore, OracleService};
 use hunch_protocol::outcome::Outcome;
 
 #[derive(Parser)]

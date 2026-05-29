@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/hunch-protocol",
+    "crates/hunch-nostr",
     "crates/hunch-mint",
     "crates/hunch-oracle",
     "crates/hunch-relay",

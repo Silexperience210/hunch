@@ -17,9 +17,9 @@ path = "src/main.rs"
 
 [dependencies]
 hunch-protocol = { path = "../hunch-protocol" }
+hunch-nostr = { path = "../hunch-nostr" }
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 anyhow.workspace = true
 sha2.workspace = true
 tokio = { workspace = true }
@@ -27,6 +27,4 @@ secp256k1 = { version = "0.30", features = ["global-context", "rand"] }
 hex = "0.4"
 rand = "0.8"
 clap = { version = "4", features = ["derive", "env"] }
-tokio-tungstenite = { version = "0.29", features = ["connect", "rustls-tls-webpki-roots"] }
-futures-util = "0.3"
 ddk-dlc = "1.0.11"

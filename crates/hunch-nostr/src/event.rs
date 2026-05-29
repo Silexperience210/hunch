@@ -4,8 +4,7 @@
 //! (`secp256k1` + `sha2` + `serde_json`) rather than pulling a Nostr SDK. The only
 //! protocol-sensitive part is the canonical serialization for the event id; everything
 //! else is BIP-340 Schnorr over that id, reusing the same secp256k1 the rest of the
-//! workspace uses. This keeps the oracle's critical path small and auditable
-//! (see `CLAUDE.md` — "treat Rust services like Bitcoin Core").
+//! workspace uses.
 //!
 //! ## NIP-01 id computation
 //!
@@ -106,13 +105,11 @@ mod tests {
     fn canonical_serialization_has_no_whitespace_and_escapes_control_chars() {
         // content with a newline + quote must be escaped per NIP-01; no spaces in the array.
         let id = event_id("ab".repeat(32).as_str(), 1, 1, &[], "line1\n\"q\"");
-        // Recompute the preimage string the same way to assert its shape.
         let preimage = json!([0, "ab".repeat(32), 1, 1, Vec::<Tag>::new(), "line1\n\"q\""]);
         let s = serde_json::to_string(&preimage).unwrap();
         assert!(!s.contains(' '), "canonical form must not contain spaces: {s}");
         assert!(s.contains("\\n"), "newline must be escaped");
         assert!(s.contains("\\\""), "quote must be escaped");
-        // And the id is stable.
         assert_eq!(id, event_id("ab".repeat(32).as_str(), 1, 1, &[], "line1\n\"q\""));
     }
 }

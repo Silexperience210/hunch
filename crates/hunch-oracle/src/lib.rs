@@ -6,15 +6,15 @@
 //! (HIP-4) is deferred to Phase 4 and slots in behind the same `OracleSigner` trait without
 //! changing the mint or DLC adapter.
 //!
+//! NIP-01 event signing + relay client live in the shared `hunch-nostr` crate.
+//!
 //! Layers:
-//! - [`event`] — NIP-01 event id + Schnorr signing from workspace primitives.
-//! - [`relay`] — minimal WebSocket publisher.
+//! - [`dlc`] — DLC oracle attestation (pre-committed nonce) via `ddk-dlc`.
+//! - [`nonce_store`] — persistent per-market nonce store with reuse guard.
 //! - [`service`] — the oracle identity wiring the protocol types to signed events.
 
 pub mod dlc;
-pub mod event;
 pub mod nonce_store;
-pub mod relay;
 pub mod service;
 
 pub use service::OracleService;

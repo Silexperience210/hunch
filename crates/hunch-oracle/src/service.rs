@@ -13,7 +13,7 @@ use secp256k1::{All, Keypair, Secp256k1, SecretKey};
 use serde_json::Value;
 
 use crate::dlc;
-use crate::event::{build_signed_event, Tag};
+use hunch_nostr::event::{build_signed_event, Tag};
 
 /// A v1 single-key Hunch oracle.
 pub struct OracleService {
