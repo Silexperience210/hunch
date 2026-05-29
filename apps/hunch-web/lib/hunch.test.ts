@@ -1,0 +1,112 @@
+import { test } from "node:test";
+import assert from "node:assert";
+import { createHash } from "node:crypto";
+import {
+  KIND_MARKET,
+  KIND_ORDER,
+  marketId,
+  parseMarketEvent,
+  parseOrderEvent,
+  computeEventId,
+  canonicalSerialization,
+  type NostrEvent,
+} from "./hunch.ts";
+
+function marketEvent(): NostrEvent {
+  return {
+    id: "00".repeat(32),
+    pubkey: "cc".repeat(32),
+    created_at: 1_700_000_000,
+    kind: KIND_MARKET,
+    tags: [
+      ["d", "btc-100k-eoy-2026"],
+      ["oracle", "aa".repeat(32)],
+      ["outcomes", "YES,NO,INVALID"],
+      ["expiry", "1767139200"],
+      ["refund_timeout", "1767744000"],
+      ["mint", "https://mint.hunch.markets"],
+      ["dlc_contract", `${"bb".repeat(32)}:0`],
+      ["category", "crypto"],
+      ["t", "bitcoin"],
+      ["t", "macro"],
+    ],
+    content: JSON.stringify({
+      question: "Will BTC close above $100k on 2026-12-31?",
+      resolution_criteria: "YES if BTC/USD >= 100000 at 23:59 UTC",
+      sources: ["https://pro.coinbase.com/markets/BTC-USD"],
+      rules_version: "1.0",
+    }),
+    sig: "00".repeat(64),
+  };
+}
+
+test("marketId format matches the Rust `<pubkey>:30888:<d>`", () => {
+  assert.strictEqual(marketId("cc".repeat(32), "m"), `${"cc".repeat(32)}:30888:m`);
+});
+
+test("parseMarketEvent extracts all fields", () => {
+  const m = parseMarketEvent(marketEvent());
+  assert.ok(m);
+  assert.strictEqual(m!.d, "btc-100k-eoy-2026");
+  assert.strictEqual(m!.id, `${"cc".repeat(32)}:30888:btc-100k-eoy-2026`);
+  assert.deepStrictEqual(m!.outcomes, ["YES", "NO", "INVALID"]);
+  assert.strictEqual(m!.expiry, 1767139200);
+  assert.strictEqual(m!.refundTimeout, 1767744000);
+  assert.strictEqual(m!.mint, "https://mint.hunch.markets");
+  assert.strictEqual(m!.category, "crypto");
+  assert.deepStrictEqual(m!.topics, ["bitcoin", "macro"]);
+  assert.strictEqual(m!.content.question, "Will BTC close above $100k on 2026-12-31?");
+});
+
+test("parseMarketEvent rejects wrong kind and missing tags", () => {
+  assert.strictEqual(parseMarketEvent({ ...marketEvent(), kind: 1 }), null);
+  const noD = marketEvent();
+  noD.tags = noD.tags.filter((t) => t[0] !== "d");
+  assert.strictEqual(parseMarketEvent(noD), null);
+});
+
+test("parseOrderEvent extracts bid/ask order", () => {
+  const ev: NostrEvent = {
+    id: "00".repeat(32),
+    pubkey: "dd".repeat(32),
+    created_at: 1,
+    kind: KIND_ORDER,
+    tags: [
+      ["d", `${"cc".repeat(32)}:30888:m`],
+      ["market", `${"cc".repeat(32)}:30888:m`],
+      ["side", "YES"],
+      ["amount", "10000"],
+      ["price", "73"],
+      ["kind", "bid"],
+      ["expires", "1900000000"],
+    ],
+    content: "",
+    sig: "00".repeat(64),
+  };
+  const o = parseOrderEvent(ev);
+  assert.ok(o);
+  assert.strictEqual(o!.side, "YES");
+  assert.strictEqual(o!.amount, 10000);
+  assert.strictEqual(o!.price, 73);
+  assert.strictEqual(o!.kind, "bid");
+  // bad side / kind rejected
+  assert.strictEqual(parseOrderEvent({ ...ev, tags: ev.tags.map((t) => (t[0] === "side" ? ["side", "MAYBE"] : t)) }), null);
+});
+
+test("computeEventId matches an independent sha256 of the canonical NIP-01 form", async () => {
+  const ev = marketEvent();
+  const sha256 = (data: Uint8Array) => new Uint8Array(createHash("sha256").update(data).digest());
+  const id = await computeEventId(ev, sha256);
+  // Independent recomputation from the canonical string.
+  const expected = createHash("sha256").update(canonicalSerialization(ev)).digest("hex");
+  assert.strictEqual(id, expected);
+  assert.strictEqual(id.length, 64);
+  // Deterministic.
+  assert.strictEqual(await computeEventId(ev, sha256), id);
+});
+
+test("canonical serialization has no insignificant whitespace", () => {
+  const s = canonicalSerialization(marketEvent());
+  assert.ok(!s.startsWith("[ "));
+  assert.ok(!s.includes(", ")); // compact form, like serde_json in hunch-nostr
+});
