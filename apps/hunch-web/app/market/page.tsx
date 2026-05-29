@@ -8,6 +8,7 @@ import { DEFAULT_RELAYS, queryRelays } from "@/lib/relay";
 import { buildOrderTemplate } from "@/lib/build";
 import { signTemplate } from "@/lib/sign";
 import { publishAll } from "@/lib/publish";
+import { verifyEvent } from "@/lib/verify";
 
 function Column({ title, orders }: { title: string; orders: Order[] }) {
   return (
@@ -108,7 +109,10 @@ function MarketView() {
     try {
       // Orders carry a single-letter `d` tag == market, so relays can filter by #d.
       const events = await queryRelays(DEFAULT_RELAYS, { kinds: [KIND_ORDER], "#d": [id], limit: 500 });
-      const orders = events.map(parseOrderEvent).filter((o): o is Order => o !== null);
+      const orders = events
+        .filter(verifyEvent) // untrusted relays — only verified orders enter the book
+        .map(parseOrderEvent)
+        .filter((o): o is Order => o !== null);
       setBook(buildOrderBook(orders, id));
       if (orders.length === 0) setError("No orders for this market yet.");
     } catch (e) {

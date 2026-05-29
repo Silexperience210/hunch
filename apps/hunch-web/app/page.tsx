@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { KIND_MARKET, parseMarketEvent, type Market } from "@/lib/hunch";
 import { DEFAULT_RELAYS, queryRelays } from "@/lib/relay";
+import { verifyEvent } from "@/lib/verify";
 
 export default function MarketsPage() {
   const [relaysInput, setRelaysInput] = useState(DEFAULT_RELAYS.join(", "));
@@ -17,6 +18,7 @@ export default function MarketsPage() {
       const relays = relaysInput.split(",").map((s) => s.trim()).filter(Boolean);
       const events = await queryRelays(relays, { kinds: [KIND_MARKET], limit: 200 });
       const parsed = events
+        .filter(verifyEvent) // relays are untrusted — drop forged/tampered events
         .map(parseMarketEvent)
         .filter((m): m is Market => m !== null)
         .sort((a, b) => b.expiry - a.expiry);
