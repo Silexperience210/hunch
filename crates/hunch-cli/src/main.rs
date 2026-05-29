@@ -412,7 +412,7 @@ fn print_orders(events: Vec<Value>, market: &str) {
     }
     // Order book: best price first within each side (bids high→low, asks low→high is conventional,
     // but we keep it simple and sort all by price descending).
-    orders.sort_by(|a, b| b.1.price.cmp(&a.1.price));
+    orders.sort_by_key(|b| std::cmp::Reverse(b.1.price));
     println!("Order book for {market}\n");
     println!(
         "{:<5} {:<4} {:>12} {:>10}  author",
