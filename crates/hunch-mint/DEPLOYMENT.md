@@ -37,9 +37,41 @@ bettor ◀──(LN withdraw)── cdk-mintd ◀──(redeem: sign with l_X = 
 ### 2. Stand up cdk-mintd
 
 - `cargo install cdk-mintd` (pin the version matching `cashu` in `Cargo.toml`, currently 0.16).
-- Configure `~/.cdk-mintd/config.toml`: the LDK/CLN/LND backend, mint URL (behind a Tor hidden
-  service per CLAUDE.md), keyset, and `nut11` enabled (P2PK — default).
+- Copy `cdk-mintd.example.toml` (this directory) to `~/.cdk-mintd/config.toml` and fill it in.
+  Mint URL behind a Tor hidden service (CLAUDE.md); `nut11` (P2PK) is on by default.
 - Start the daemon; verify `GET /v1/keys` and `/v1/info` advertise NUT-11 support.
+
+#### Backend choices (in order of pre-audit preference)
+
+1. **`fakewallet`** — no Lightning at all. Use for local CI / the in-process demo. Default in the
+   example config.
+2. **`ldknode` on Mutinynet (signet)** — self-contained signet node; the recommended backend for
+   the HIP-3 signet end-to-end gate. No external infra.
+3. **Umbrel via LNbits** — reuse the LNbits app already running on your Umbrel (the 21pay
+   Cloudflare-tunnel setup). Create a *dedicated* LNbits wallet for the mint and put its
+   `lnbits_api` URL + admin/invoice keys in `[lnbits]`. Easiest reuse of existing infra.
+4. **Umbrel via LND gRPC** — point `[lnd]` at the node directly.
+
+#### Pulling LND creds off Umbrel (option 4)
+
+Umbrel runs LND. From the node (SSH `umbrel@umbrel.local`):
+
+```
+# TLS cert + a macaroon for the chain your node runs:
+~/umbrel/app-data/lightning/data/lnd/tls.cert
+~/umbrel/app-data/lightning/data/lnd/data/chain/bitcoin/<network>/admin.macaroon
+```
+
+Copy both to the mint host, set `cert_file` / `macaroon_file`, and `address = "https://<umbrel-ip>:10009"`
+(open/forward LND's gRPC port, or run the mint on the Umbrel LAN).
+
+#### ⚠ Mainnet gate
+
+Umbrel runs **mainnet** by default. CLAUDE.md forbids mainnet for this alpha mint until external
+audit signoff. **Pre-audit, use a signet/regtest backend** (option 2, or a signet LNbits/LND).
+The conditional-token logic (`src/cashu_token.rs`) is identical on every network — only the
+payment rail differs — so a signet demo fully validates the design. Reserve the Umbrel mainnet
+node for the post-audit, tiered launch (100k → 1M → uncapped).
 
 ### 3. Issue conditional tokens
 

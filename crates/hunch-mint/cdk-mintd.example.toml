@@ -1,0 +1,80 @@
+# Hunch mint — cdk-mintd configuration (example)
+#
+# The mint is vanilla cdk-mintd (NUT-11). Hunch conditionality lives entirely in each token's
+# P2PK lock key (L_X = B + S_X); the mint needs no Hunch fork. See DEPLOYMENT.md.
+#
+# ┌──────────────────────────────────────────────────────────────────────────────────────┐
+# │ SAFETY (CLAUDE.md): NUT-DLC is alpha. Run on SIGNET/REGTEST until external audit signoff.│
+# │ Do NOT point this at a mainnet Lightning wallet with real funds pre-audit.               │
+# └──────────────────────────────────────────────────────────────────────────────────────┘
+
+[info]
+url = "https://mint.hunch.markets/"      # public URL; front this with a Tor hidden service (CLAUDE.md: Tor day 1)
+listen_host = "127.0.0.1"
+listen_port = 8085
+mnemonic = ""                            # GENERATE OFFLINE, keep secret; controls mint keys
+# input_fee_ppk = 0
+
+[info.quote_ttl]
+mint_ttl = 600
+melt_ttl = 120
+
+[mint_info]
+name = "Hunch (signet)"
+description = "Outcome-conditional ecash for Hunch markets — TEST / signet only, not real sats"
+# contact_nostr_public_key = "<HUNCH_NSEC pubkey hex>"
+# tos_url = "https://hunch.markets/terms"
+
+[database]
+engine = "sqlite"
+
+# ───────────────────────────── Lightning backend ─────────────────────────────
+# Pick ONE backend. Default below is fakewallet (no real LN — perfect for local CI / unit demo).
+[ln]
+ln_backend = "fakewallet"
+min_mint = 1
+max_mint = 100000          # tiered launch cap (CLAUDE.md): week 1-4 = 100k sat
+min_melt = 1
+max_melt = 100000
+
+# Option A — RECOMMENDED for the pre-audit signet demo: self-contained LDK node on Mutinynet (signet).
+# Set ln_backend = "ldknode" above.
+# [ldk_node]
+# bitcoin_network = "signet"
+# chain_source_type = "esplora"
+# esplora_url = "https://mutinynet.com/api"
+# gossip_source_type = "rgs"
+# rgs_url = "https://rgs.mutinynet.com/snapshot/0"
+# ldk_node_mnemonic = "<generate a separate BIP39 mnemonic, keep offline>"
+# storage_dir_path = "~/.cdk-ldk-node/mutinynet"
+# fee_percent = 0.02
+# reserve_fee_min = 2
+
+# Option B — your Umbrel node via its LNbits app (you already run LNbits on Umbrel, per 21pay).
+# Easiest reuse of existing infra. Create a DEDICATED LNbits wallet for the mint; use a
+# signet/regtest LNbits instance pre-audit (a mainnet LNbits wallet = real sats — do not pre-audit).
+# Set ln_backend = "lnbits" above.
+# [lnbits]
+# lnbits_api = "https://<your-umbrel-lnbits-cf-tunnel-host>"   # the Cloudflare tunnel URL you set up
+# admin_api_key = "<LNbits wallet Admin key>"
+# invoice_api_key = "<LNbits wallet Invoice/read key>"
+# fee_percent = 0.02
+# reserve_fee_min = 2
+
+# Option C — your Umbrel node's LND directly (gRPC). Umbrel exposes LND; copy tls.cert and a
+# macaroon off the node (see DEPLOYMENT.md). Pre-audit: only if that LND is on signet/regtest.
+# Set ln_backend = "lnd" above.
+# [lnd]
+# address = "https://<umbrel-host>:10009"
+# cert_file = "/path/to/umbrel/lnd/tls.cert"
+# macaroon_file = "/path/to/umbrel/lnd/data/chain/bitcoin/signet/admin.macaroon"
+# fee_percent = 0.02
+# reserve_fee_min = 2
+
+[mint_management_rpc]
+enabled = false
+
+[info.http_cache]
+backend = "memory"
+ttl = 60
+tti = 60
