@@ -12,7 +12,7 @@ use hunch_protocol::outcome::Outcome;
 use secp256k1::{All, Keypair, Secp256k1, SecretKey};
 use serde_json::Value;
 
-use crate::dlc;
+use hunch_dlc::sign_attestation_with_nonce;
 use hunch_nostr::event::{build_signed_event, Tag};
 
 /// A v1 single-key Hunch oracle.
@@ -91,7 +91,7 @@ impl OracleService {
             .try_into()
             .map_err(|_| anyhow::anyhow!("nonce secret must be 32 bytes"))?;
         let signature_hex =
-            dlc::sign_attestation_with_nonce(&self.secret_bytes, &nonce_bytes, market, outcome)
+            sign_attestation_with_nonce(&self.secret_bytes, &nonce_bytes, market, outcome)
                 .context("DLC attestation signing")?;
         let attestation = OracleAttestation {
             market: market.to_string(),

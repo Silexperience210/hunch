@@ -9,11 +9,10 @@
 //! NIP-01 event signing + relay client live in the shared `hunch-nostr` crate.
 //!
 //! Layers:
-//! - [`dlc`] — DLC oracle attestation (pre-committed nonce) via `ddk-dlc`.
+//! - DLC attestation crypto lives in the shared `hunch-dlc` crate.
 //! - [`nonce_store`] — persistent per-market nonce store with reuse guard.
 //! - [`service`] — the oracle identity wiring the protocol types to signed events.
 
-pub mod dlc;
 pub mod nonce_store;
 pub mod service;
 

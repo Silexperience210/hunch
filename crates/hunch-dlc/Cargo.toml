@@ -1,0 +1,18 @@
+[package]
+name = "hunch-dlc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Hunch DLC primitives — oracle attestation (pre-committed nonce) + outcome-conditional ecash locks (NUT-11 P2PK to the oracle signature point). Built on ddk-dlc / libsecp256k1-zkp."
+
+[dependencies]
+hunch-protocol = { path = "../hunch-protocol" }
+anyhow.workspace = true
+sha2.workspace = true
+hex = "0.4"
+ddk-dlc = "1.0.11"
+
+[dev-dependencies]
+secp256k1 = { version = "0.30", features = ["global-context"] }

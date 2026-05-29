@@ -18,13 +18,12 @@ path = "src/main.rs"
 [dependencies]
 hunch-protocol = { path = "../hunch-protocol" }
 hunch-nostr = { path = "../hunch-nostr" }
+hunch-dlc = { path = "../hunch-dlc" }
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
-sha2.workspace = true
 tokio = { workspace = true }
 secp256k1 = { version = "0.30", features = ["global-context", "rand"] }
 hex = "0.4"
 rand = "0.8"
 clap = { version = "4", features = ["derive", "env"] }
-ddk-dlc = "1.0.11"
