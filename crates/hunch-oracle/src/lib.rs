@@ -11,7 +11,9 @@
 //! - [`relay`] — minimal WebSocket publisher.
 //! - [`service`] — the oracle identity wiring the protocol types to signed events.
 
+pub mod dlc;
 pub mod event;
+pub mod nonce_store;
 pub mod relay;
 pub mod service;
 

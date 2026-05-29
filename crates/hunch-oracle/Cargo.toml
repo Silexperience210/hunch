@@ -29,3 +29,4 @@ rand = "0.8"
 clap = { version = "4", features = ["derive", "env"] }
 tokio-tungstenite = { version = "0.29", features = ["connect", "rustls-tls-webpki-roots"] }
 futures-util = "0.3"
+ddk-dlc = "1.0.11"

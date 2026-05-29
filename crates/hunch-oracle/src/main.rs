@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
-use hunch_oracle::{generate_keypair, generate_nonce, relay, OracleService};
+use hunch_oracle::{generate_keypair, nonce_store::NonceStore, relay, OracleService};
 use hunch_protocol::outcome::Outcome;
 
 #[derive(Parser)]
@@ -38,9 +38,6 @@ enum Command {
         /// Market identifier: `<creator_pubkey>:30888:<d>`.
         #[arg(long)]
         market: String,
-        /// Announced public nonce R (hex, 32 bytes). If omitted, a placeholder nonce is generated.
-        #[arg(long)]
-        nonce: Option<String>,
         /// Free-form announce body (resolution rules summary, contact, etc.).
         #[arg(long, default_value = "")]
         body: String,
@@ -81,6 +78,9 @@ struct NetArgs {
     /// Seconds to wait for each relay's OK reply.
     #[arg(long, default_value_t = 10)]
     timeout: u64,
+    /// Path to the nonce store (persists announced nonces + enforces the reuse guard).
+    #[arg(long, default_value = "hunch-oracle-nonces.json")]
+    nonce_store: String,
 }
 
 impl KeyArgs {
@@ -131,28 +131,32 @@ async fn main() -> Result<()> {
             let oracle = key.oracle()?;
             println!("{}", oracle.pubkey_hex());
         }
-        Command::Announce { key, net, market, nonce, body } => {
+        Command::Announce { key, net, market, body } => {
             let oracle = key.oracle()?;
-            let nonce_pubkey = match nonce {
-                Some(n) => n,
-                None => {
-                    let (nonce_secret, nonce_pubkey) = generate_nonce();
-                    eprintln!("⚠  No --nonce given; generated a PLACEHOLDER nonce.");
-                    eprintln!("⚠  Adapter-signature binding (announced R == attestation R) is deferred to SPIKE-02.");
-                    eprintln!("nonce_secret: {nonce_secret}");
-                    eprintln!("nonce_pubkey: {nonce_pubkey}");
-                    nonce_pubkey
-                }
-            };
+            // The oracle owns its nonce: generate + persist R for this market (idempotent).
+            let mut store = NonceStore::load(&net.nonce_store)?;
+            let nonce = store.get_or_create(&market)?;
+            eprintln!("announced nonce R: {}", nonce.pubkey);
             let created_at = now();
-            let event = oracle.build_announce_event(&market, &nonce_pubkey, &body, created_at)?;
+            let event = oracle.build_announce_event(&market, &nonce.pubkey, &body, created_at)?;
             broadcast(&net, &event).await?;
         }
         Command::Attest { key, net, market, outcome } => {
             let oracle = key.oracle()?;
+            // Load the nonce committed at announce time; the store refuses a conflicting reuse.
+            let mut store = NonceStore::load(&net.nonce_store)?;
+            let nonce = store.nonce_for_attest(&market, outcome.as_str())?;
             let created_at = now();
-            let (event, attestation) = oracle.build_attestation_event(&market, outcome, created_at)?;
-            eprintln!("attestation: market={} outcome={} sig={}", attestation.market, attestation.outcome, attestation.signature_hex);
+            let (event, attestation) =
+                oracle.build_attestation_event(&market, outcome, &nonce.secret, created_at)?;
+            // Lock the nonce to this outcome BEFORE publishing, so a later attest can never
+            // sign a different outcome under the same R (which would leak the oracle key).
+            store.commit_attest(&market, outcome.as_str())?;
+            eprintln!(
+                "attestation: market={} outcome={} sig={}",
+                attestation.market, attestation.outcome, attestation.signature_hex
+            );
+            eprintln!("nonce R {} now locked to {}", nonce.pubkey, outcome);
             broadcast(&net, &event).await?;
         }
     }

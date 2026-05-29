@@ -12,12 +12,14 @@ use hunch_protocol::outcome::Outcome;
 use secp256k1::{All, Keypair, Secp256k1, SecretKey};
 use serde_json::Value;
 
+use crate::dlc;
 use crate::event::{build_signed_event, Tag};
 
 /// A v1 single-key Hunch oracle.
 pub struct OracleService {
     signer: SingleKeySigner,
     keypair: Keypair,
+    secret_bytes: [u8; 32],
     secp: Secp256k1<All>,
 }
 
@@ -29,11 +31,12 @@ impl OracleService {
         if bytes.len() != 32 {
             anyhow::bail!("oracle secret key must be 32 bytes ({} hex chars), got {}", 64, secret_hex.len());
         }
+        let secret_bytes: [u8; 32] = bytes.clone().try_into().expect("length checked above");
         let sk = SecretKey::from_slice(&bytes).context("oracle secret key is not a valid secp256k1 scalar")?;
         let secp = Secp256k1::new();
         let keypair = Keypair::from_secret_key(&secp, &sk);
         let signer = SingleKeySigner::new(sk);
-        Ok(OracleService { signer, keypair, secp })
+        Ok(OracleService { signer, keypair, secret_bytes, secp })
     }
 
     /// The oracle's x-only public key as hex (its Nostr pubkey and HIP-2 attestation key).
@@ -45,12 +48,9 @@ impl OracleService {
     /// Builds a signed NIP-88 announce event (kind 88) committing to attest `market`.
     ///
     /// `nonce_pubkey` is the oracle's announced public nonce R for this market (hex, 32 bytes).
-    ///
-    /// NOTE (v1 limitation): binding the announced R into the attestation as a DLC adapter
-    /// signature (so `announced R == attestation R`) is deferred to the mint/DLC integration
-    /// (SPIKE-02). The current attestation uses a BIP-340 deterministic nonce, so the announce
-    /// is a well-formed commitment but not yet adapter-bound. This is documented loudly per
-    /// the cypherpunk "document centralized/incomplete trust assumptions" rule.
+    /// This R is binding: [`build_attestation_event`](Self::build_attestation_event) signs the
+    /// outcome with the matching nonce secret, so the mint can compute the per-outcome
+    /// signature point `R + e·P` in advance and adaptor-encrypt the CET to it.
     pub fn build_announce_event(
         &self,
         market: &str,
@@ -70,20 +70,34 @@ impl OracleService {
         Ok(self.sign(OracleAnnounce::KIND, tags, content, created_at))
     }
 
-    /// Signs the outcome and builds a signed NIP-88 attestation event (kind 89).
+    /// Signs the outcome with the pre-committed `nonce_secret_hex` (the secret behind the
+    /// announced R) and builds a signed NIP-88 attestation event (kind 89).
     ///
-    /// Returns both the wire event and the parsed [`OracleAttestation`] so callers can log /
-    /// verify the inner HIP-2 signature before publishing.
+    /// The signature is a DLC oracle attestation (BIP-340 with the announced nonce), produced
+    /// by `ddk-dlc` — not custom crypto. Returns both the wire event and the parsed
+    /// [`OracleAttestation`] so callers can log / verify before publishing.
+    ///
+    /// SAFETY: the caller MUST guarantee `nonce_secret_hex` is used for exactly one outcome on
+    /// this market (see [`crate::nonce_store`]). Reuse across outcomes leaks the oracle key.
     pub fn build_attestation_event(
         &self,
         market: &str,
         outcome: Outcome,
+        nonce_secret_hex: &str,
         created_at: i64,
     ) -> Result<(Value, OracleAttestation)> {
-        let attestation = self
-            .signer
-            .sign_attestation(market, outcome)
-            .context("signing attestation")?;
+        let nonce_bytes: [u8; 32] = hex::decode(nonce_secret_hex.trim())
+            .context("nonce secret is not valid hex")?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("nonce secret must be 32 bytes"))?;
+        let signature_hex =
+            dlc::sign_attestation_with_nonce(&self.secret_bytes, &nonce_bytes, market, outcome)
+                .context("DLC attestation signing")?;
+        let attestation = OracleAttestation {
+            market: market.to_string(),
+            outcome,
+            signature_hex,
+        };
         // Defense in depth: verify our own signature before broadcasting it.
         attestation
             .verify(&self.signer.pubkey())
@@ -120,11 +134,13 @@ mod tests {
         assert!(OracleService::from_secret_hex(&"00".repeat(31)).is_err());
     }
 
+    const TEST_NONCE: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00";
+
     #[test]
     fn attestation_event_is_well_formed_and_self_verifies() {
         let oracle = OracleService::from_secret_hex(TEST_SECRET).unwrap();
         let (event, att) = oracle
-            .build_attestation_event(&market_id(), Outcome::Yes, 1_700_000_000)
+            .build_attestation_event(&market_id(), Outcome::Yes, TEST_NONCE, 1_700_000_000)
             .unwrap();
 
         assert_eq!(event["kind"], 89);
