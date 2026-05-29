@@ -5,7 +5,26 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Hunch Nostr relay configuration + deployment (Phase 1: stub; impl in Phase 2 per HIP-1)"
+description = "Hunch Nostr relay — validates Hunch event kinds (HIP-1) via hunch-protocol, verifies signatures, NIP-01 EVENT/REQ/EOSE/CLOSE."
+
+[lib]
+name = "hunch_relay"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hunch-relay"
+path = "src/main.rs"
 
 [dependencies]
+hunch-protocol = { path = "../hunch-protocol" }
+hunch-nostr = { path = "../hunch-nostr" }
 serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tokio = { workspace = true }
+tokio-tungstenite = "0.29"
+futures-util = "0.3"
+clap = { version = "4", features = ["derive", "env"] }
+
+[dev-dependencies]
+secp256k1 = { version = "0.30", features = ["global-context"] }

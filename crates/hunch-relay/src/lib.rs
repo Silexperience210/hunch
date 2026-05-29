@@ -1,4 +1,9 @@
-//! Hunch Nostr relay — accepts kinds 30888 (market), 38888 (order), 30890 (dispute),
-//! 30891 (reputation), 88/89 (oracle), 30023 (NIP-23 long-form HIPs).
+//! Hunch Nostr relay.
 //!
-//! Phase 1 deliverable: empty crate skeleton. Implementation lands in Phase 2 per `docs/HIP-1.md`.
+//! A relay that verifies event signatures and validates Hunch-reserved kinds (HIP-1) against
+//! `hunch-protocol` before storing them. The [`engine`] module is the pure, testable core
+//! (validation + storage + filter matching); the binary wraps it in an async WebSocket server.
+
+pub mod engine;
+
+pub use engine::{matches_filter, IngestResult, Relay};
