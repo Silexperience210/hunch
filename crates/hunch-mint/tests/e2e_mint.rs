@@ -105,6 +105,21 @@ fn mint_one_sat(
         .unwrap();
     let quote_id = quote["quote"].as_str().expect("quote id");
 
+    // The fakewallet backend auto-settles its invoices, but not instantly — poll the quote
+    // status until it is PAID before minting (a real wallet would pay the bolt11 invoice here).
+    for _ in 0..40 {
+        let status: Value = client
+            .get(format!("{url}/v1/mint/quote/bolt11/{quote_id}"))
+            .send()
+            .unwrap()
+            .json()
+            .unwrap();
+        if status["state"].as_str() == Some("PAID") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+
     let resp: Value = client
         .post(format!("{url}/v1/mint/bolt11"))
         .json(&json!({ "quote": quote_id, "outputs": [serde_json::to_value(&bm).unwrap()] }))
