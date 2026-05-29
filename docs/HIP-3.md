@@ -1,136 +1,158 @@
-# HIP-3: Cashu NUT-CTF Integration for Hunch
+# HIP-3: Conditional Tokens for Hunch (NUT-11 P2PK to Oracle Signature Point)
 
 ```
 HIP:      3
-Title:    Cashu NUT-CTF Integration for Hunch Markets
+Title:    Conditional Tokens for Hunch Markets via NUT-11 P2PK
 Authors:  Silex <silex@hunch.markets>
 Status:   Draft
 Type:     Standards Track
 Created:  2026-05-28
+Updated:  2026-05-29
 License:  MIT
 Requires: HIP-0, HIP-1, HIP-2
 ```
 
-> **Status note:** HIP-3 is in DRAFT and will remain so until Phase 1 SPIKE-02 (NUT-CTF signet prototype) successfully demonstrates the full flow on Bitcoin signet AND the upstream Cashu NUT-CTF proposal (cashubtc/nuts#337) stabilizes. Transition to FINAL requires both gates.
+> **Status note:** HIP-3 is in DRAFT. It originally targeted Cashu NUT-CTF (cashubtc/nuts#337); SPIKE-02 (2026-05-29) resolved that NUT-CTF is **not required** — outcome-conditional tokens are built on the **final, shipping NUT-11 P2PK** spec instead (see `spikes/nut-ctf/SPIKE-02-RESOLUTION.md`). Transition to FINAL now requires only: (1) a signet end-to-end demo (issuance + redemption), and (2) external review. The NUT-CTF stabilization gate has been removed.
 
 ## Abstract
 
-HIP-3 specifies how a Hunch mint extends the Cashu Conditional Token Framework ([cashubtc/nuts#337](https://github.com/cashubtc/nuts/pull/337)) to issue conditional tokens representing YES, NO, or refund claims against an underlying DLC contract (HIP-2). The mint accepts Lightning deposits, issues blinded conditional tokens that are spendable only when the associated oracle attestation matches the token's outcome, and redeems winning tokens for Lightning withdrawals after DLC settlement. The integration relies on NUT-CTF's outcome-conditional spend predicates rather than the bilateral NUT-DLC pattern of the obsolete cashubtc/nuts#128.
+HIP-3 specifies how a Hunch mint issues conditional ecash representing YES or NO claims against an underlying DLC contract (HIP-2). A Hunch outcome token is an ordinary **NUT-11 Pay-to-Pubkey (P2PK)** Cashu proof, locked to a key derived from the market's oracle. The token becomes spendable only once the oracle publishes the matching outcome attestation (HIP-1 kind:89). The mint enforces only NUT-11 — it needs no DLC awareness and no protocol extension. Lightning deposits/withdrawals and blind-signature issuance use unmodified Cashu (NUT-00/01/02/03). The DLC conditionality is encoded entirely in the P2PK lock key.
 
 ## Motivation
 
-A single DLC supports two counterparties. A prediction market needs many bettors. HIP-3 solves this by making the mint the bilateral DLC counterparty (HIP-2) and issuing many-to-many tokens to bettors that resolve in lockstep with the DLC. The NUT-CTF framework provides the cryptographic primitive: blinded tokens whose unblinding requires a specific oracle attestation.
+A single DLC supports two counterparties; a prediction market needs many bettors. HIP-3 makes the mint the bilateral DLC counterparty (HIP-2) and issues many-to-many tokens to bettors that resolve in lockstep with the DLC.
 
-The earlier proposal (cashubtc/nuts#128 by conduition) was a bilateral NUT-DLC primitive. It was closed by Cashu maintainers on 2025-05-20 with the comment "Closing as there is no active work. Please reopen if work continues." NUT-CTF (cashubtc/nuts#337 by joemphilips, opened 2026-02-07) is its architectural successor and is the chosen direction for Hunch (see CONTEXT.md decision D-01).
+The earlier bilateral primitive (cashubtc/nuts#128 by conduition) was **closed** by Cashu maintainers on 2025-05-20. Its successor, NUT-CTF (cashubtc/nuts#337, "NUTs for prediction markets"), remains a **draft/WIP** and is not implemented in any shipping mint. Depending on it blocked the Hunch mint.
+
+**SPIKE-02 found that no conditional-token NUT is needed.** The DLC oracle already publishes, for each outcome `X`, an implicit public key `S_X` whose secret is revealed exactly when (and only when) the oracle attests `X`. Locking a token to `S_X` (combined with the bettor's key) yields outcome-conditional spendability using only NUT-11, which is final and implemented in CDK.
 
 ## Specification
 
+### Oracle Signature Point
+
+Per HIP-2 / HIP-4, a Hunch oracle commits to a nonce `R = k·G` for a market (announced, HIP-1 kind:88) and attests an outcome by publishing a BIP-340 signature bound to that nonce (kind:89). For oracle key `P = x·G` and the canonical message `m_X = "hunch/oracle/v1\n<market>\n<X>"`, define the per-outcome **signature point**:
+
+```
+S_X = R + e_X · P,   where  e_X = BIP340_challenge( R_x || P_x || sha256(m_X) )
+```
+
+The oracle's attestation for `X` is the pair `(R, s_X)` with `s_X = k + e_X · x`. Thus:
+
+```
+s_X · G = S_X
+```
+
+`s_X` is computable by anyone **after** the attestation, and by **no one before** it. Because the oracle attests exactly one outcome per market — enforced by a nonce-reuse guard, since signing two outcomes under one `R` leaks `x` — at most one `s_X` is ever revealed.
+
+### Token Lock
+
+A bettor with key pair `(b, B = b·G)` holding an outcome-`X` token receives a NUT-11 P2PK proof locked to:
+
+```
+L_X = B + S_X        (33-byte compressed secp256k1 point)
+```
+
+The NUT-11 secret is the well-known form:
+
+```json
+["P2PK", {
+  "nonce": "<random hex>",
+  "data": "<L_X compressed hex>",
+  "tags": [
+    ["refund", "<B compressed hex>"],
+    ["locktime", "<refund_timeout unix>"],
+    ["sigflag", "SIG_INPUTS"]
+  ]
+}]
+```
+
+`data` (`L_X`) is the outcome branch; `refund` + `locktime` are the HIP-2 refund branch. NUT-12 DLEQ proofs are mandatory (CLAUDE.md "Do" list); bettors verify them on every receive to detect mint cheating.
+
 ### Token Lifecycle
 
-A bettor's interaction with a Hunch mint is a five-step lifecycle:
-
 1. **Deposit**: bettor pays a Lightning invoice issued by the mint for amount A sat.
-2. **Mint**: bettor sends blinded outputs and receives signed conditional tokens. Each token carries a spend predicate: "spendable only if oracle attestation matches outcome X". The bettor chooses YES tokens or NO tokens at mint time.
-3. **Hold / trade**: bettor holds the tokens until settlement, or trades them through the mint's Tier 1 orderbook (HIP-1 kind:38888 ephemeral orders) or via Tier 2 P2P matching.
-4. **Settle**: after market expiry, the oracle publishes a kind:89 attestation (HIP-1). The mint observes the attestation, settles the underlying DLC (HIP-2), and unlocks redemption for the winning side.
-5. **Redeem / refund**: bettor swaps winning tokens for fresh tokens that are immediately Lightning-redeemable. Losing tokens become unspendable. Under INVALID outcome, all bettors receive refund tokens redeemable at entry price.
-
-### Token Format
-
-A Hunch NUT-CTF token extends the canonical Cashu token (NUT-00) with conditional-spend metadata. Per NUT-CTF (PR #337), the token blob includes:
-
-```
-token = {
-  amount: <integer sat>,
-  C: <blind-signed commitment, 33 bytes>,
-  conditions: {
-    market: "<pubkey>:30888:<d>",        // HIP-1 market identifier
-    outcome: "YES" | "NO" | "REFUND",
-    oracle_pubkey: <hex 32 bytes>,
-    spend_predicate: "OUTCOME_MATCH" | "REFUND_AFTER_TIMEOUT"
-  },
-  proof: <NUT-12 DLEQ proof, mandatory>
-}
-```
-
-The mint signs the token using the standard Cashu blind-signature scheme (NUT-01 / NUT-02), but the keyset is parameterized by `(market_id, outcome, oracle_pubkey)`. The mint maintains separate keysets per market.
-
-NUT-12 DLEQ proofs are mandatory (CLAUDE.md "Do" list); bettors verify the proof on every token receive to detect mint cheating.
+2. **Mint**: bettor sends blinded outputs (NUT-00/03) and receives signed proofs whose secret is the NUT-11 lock above, with `data = L_X` for the chosen side. The mint signs with its standard keyset — no per-market keyset is required.
+3. **Hold / trade**: bettor holds until settlement, or trades through the Tier 1 mint orderbook (HIP-1 kind:38888) or Tier 2 P2P matching (hunch-matcher).
+4. **Settle**: after expiry the oracle publishes the kind:89 attestation. Anyone can now compute `s_X`.
+5. **Redeem / refund**: the winning-side holder derives `l_X = b + s_X` and signs the spend (OUTCOME_MATCH). Losing-side tokens never unlock via the outcome branch; holders recover via the refund branch after `refund_timeout`.
 
 ### Spend Predicate: OUTCOME_MATCH
 
-To spend a YES token, the bettor presents the token plus a witness containing the oracle's published kind:89 attestation (event ID + Schnorr signature). The mint verifies:
+To spend an outcome-`X` token after attestation, the holder derives the spend key
 
-1. The attestation's `pubkey` field matches `conditions.oracle_pubkey` in the token
-2. The attestation's content payload outcome matches `conditions.outcome` in the token
-3. The Schnorr signature over the attestation is valid against `conditions.oracle_pubkey`
-4. The attestation's `market` tag matches `conditions.market` in the token
+```
+l_X = b + s_X
+```
 
-If all four checks pass, the mint accepts the spend and issues redemption tokens (either Lightning-redeemable proofs or fresh standard Cashu proofs).
+where `s_X` is the scalar half (last 32 bytes) of the oracle's 64-byte kind:89 signature, and signs the NUT-11 secret with `l_X`. Because `l_X · G = B + S_X = L_X`, the signature verifies under `data`. The mint performs only the standard NUT-11 check (valid Schnorr signature under `data`); it does not parse attestations or markets. All conditionality lives in `L_X`.
+
+This binds spending to BOTH the bettor (`b` required) AND the outcome (`s_X` required), so only the genuine winning-side holder can redeem.
 
 ### Spend Predicate: REFUND_AFTER_TIMEOUT
 
-For tokens minted with `spend_predicate: REFUND_AFTER_TIMEOUT`, the bettor may unilaterally spend the token after wallclock passes the market's `refund_timeout` (HIP-1 kind:30888). The mint verifies only the timeout and accepts the spend, releasing refund proofs.
-
-This predicate exists because the oracle may go silent. Bettors deserve a recovery path independent of mint cooperation; the timeout-gated refund predicate is enforced by the underlying DLC refund branch (HIP-2 §Refund Branch).
+Per NUT-11, once wallclock passes `locktime`, the `refund` key may spend the proof. The bettor's `B` is the refund key, so after `refund_timeout` the bettor unilaterally reclaims the token regardless of any attestation. This is the recovery path when the oracle goes silent, enforced by the underlying DLC refund branch (HIP-2 §Refund Branch) — no mint cooperation beyond honoring NUT-11.
 
 ### Refund Mechanics for INVALID Outcome
 
-When the oracle attests INVALID (HIP-2 §INVALID Outcome Semantics), the mint receives the refund branch of the DLC. The mint then accepts spends of both YES and NO tokens at their entry mint price. Bettors swap their YES/NO tokens for refund tokens redeemable at face value via Lightning. There is no winner; there is no loser.
+When the oracle attests INVALID (HIP-2 §INVALID Outcome Semantics), it reveals `s_INVALID`, never `s_YES` or `s_NO`. Therefore neither YES nor NO tokens unlock via OUTCOME_MATCH; both recover through the refund branch after `refund_timeout`. The mint, having received the DLC's INVALID/refund branch on-chain (HIP-2 `CET_INVALID`), honors these refund spends at entry price. There is no winner and no loser. `refund_timeout` MUST therefore be set so bettors are not stranded waiting (HIP-2 §Refund Branch mandates ≥ 7 days after expiry).
 
 ### Mint State Machine
 
 ```
-[Market open]    → mint accepts deposits, issues YES/NO tokens
+[Market open]    → mint accepts deposits, issues YES/NO P2PK tokens
 [Market expiry]  → mint freezes issuance; existing tokens remain in circulation
-[Oracle signs]   → mint settles DLC, unlocks spending of matching outcome tokens
-[Refund timeout] → mint accepts unilateral REFUND_AFTER_TIMEOUT spends from any token holder
+[Oracle signs]   → s_X becomes public; winning-side tokens are spendable via OUTCOME_MATCH
+[Refund timeout] → losing/all holders reclaim via the NUT-11 refund branch
 ```
 
-The mint MUST publish a `kind:30892` mint-announce event (HIP-1) updated whenever it transitions state.
+The mint MUST publish a `kind:30892` mint-announce event (HIP-1), updated on state transitions.
 
 ### Reserves Disclosure
 
 Per CLAUDE.md "Engineering Principles", the mint MUST publish weekly reserves proofs documenting:
-- Total YES tokens outstanding per market
-- Total NO tokens outstanding per market
-- Bitcoin held in DLC funding outputs (txid:vout references)
-- Bitcoin held in Lightning channels for redemption
+- Total outstanding outcome tokens per market (YES and NO).
+- Bitcoin held in DLC funding outputs (txid:vout references).
+- Bitcoin held in Lightning channels for redemption.
 
 The reserves proof URL is published as the `reserves_proof` tag in the mint's `kind:30892` event.
 
 ## Backwards Compatibility
 
-HIP-3 builds on Cashu NUT-CTF as proposed in cashubtc/nuts#337. NUT-CTF is itself a draft and may evolve. HIP-3 tracks NUT-CTF stability:
-
-- If NUT-CTF merges as PR #337 as currently scoped, HIP-3 transitions to Final after Hunch's SPIKE-02 demonstrates a working signet prototype.
-- If NUT-CTF re-scopes significantly, HIP-3 issues a corrigendum reflecting the upstream changes.
-- If NUT-CTF stalls (similar to PR #128's fate), Hunch may revisit Path B (PR #128 fork) or Path C (custodial-promise fallback) — both currently de-scoped per CONTEXT.md decision D-01.
-
-Earlier draft references in `.planning/research/*.md` to PR #128 are OBSOLETE; see those files' Corrigendum sections (Plan 01 Task 1).
-
-## Test Vectors
-
-Test vectors for the NUT-CTF integration land in `crates/hunch-mint-spike/tests/e2e_signet.rs` during Phase 1 SPIKE-02. The full Phase 2 implementation in `crates/hunch-mint/tests/` will add reference token-format vectors against the canonical NUT-CTF spec.
+HIP-3 now depends only on **final** Cashu NUTs (NUT-00/01/02/03/11/12). It does not depend on any draft NUT. If a future NUT-CTF (#337) stabilizes and offers concrete advantages (e.g. native multi-outcome predicates), Hunch MAY adopt it as an optional alternative; it is not on the critical path. References to PR #128 and to NUT-CTF as a *dependency* in earlier `.planning/research/*.md` are OBSOLETE.
 
 ## Reference Implementation
 
-- Phase 1 prototype: `crates/hunch-mint-spike` (SPIKE-02 deliverable, throwaway)
-- Phase 2 production: `crates/hunch-mint`
-- Library: [cdk (cashu dev kit)](https://github.com/cashubtc/cdk) — Hunch will track CDK's NUT-CTF support as it lands
+- `crates/hunch-dlc` — `attestation` (sign-with-nonce, `signature_point`) and `conditional`
+  (`outcome_lock_key` = `B + S_X`, `outcome_unlock_secret` = `b + s_X`, `verify_unlock`).
+- `crates/hunch-mint` — `token.rs`: `build_outcome_token` (NUT-11 secret with lock + refund +
+  locktime), `redeem_spend_secret`, `verify_token_unlock`.
+- Library: [cdk (cashu dev kit)](https://github.com/cashubtc/cdk) — standard NUT-11 mint/wallet.
+
+## Test Vectors
+
+Implemented as crate tests (proven against the real oracle attestation path):
+- `crates/hunch-dlc/src/conditional.rs` — a YES attestation unlocks the YES token and does NOT
+  unlock the NO token; `s_X·G == S_X`.
+- `crates/hunch-mint/src/token.rs` — a YES attestation redeems the YES token only; a wrong bettor
+  secret cannot redeem; the NUT-11 secret carries the correct lock/refund/locktime.
+
+A signet end-to-end demo (Lightning deposit → mint → attest → redeem) is the remaining Draft→Final gate.
 
 ## References
 
-1. cashubtc/nuts#337 — NUTs for Prediction Markets (Conditional Token Framework). https://github.com/cashubtc/nuts/pull/337
-2. cashubtc/nuts#128 — Bilateral NUT-DLC (CLOSED 2025-05-20, historical reference only). https://github.com/cashubtc/nuts/pull/128
-3. cashubtc/nuts, NUT-00 — Notation and conventions. https://github.com/cashubtc/nuts/blob/main/00.md
-4. cashubtc/nuts, NUT-01 — Mint public keys. https://github.com/cashubtc/nuts/blob/main/01.md
-5. cashubtc/nuts, NUT-02 — Keysets. https://github.com/cashubtc/nuts/blob/main/02.md
+1. cashubtc/nuts, NUT-11 — Pay-to-Pubkey (P2PK). https://github.com/cashubtc/nuts/blob/main/11.md
+2. cashubtc/nuts, NUT-00 — Notation and conventions. https://github.com/cashubtc/nuts/blob/main/00.md
+3. cashubtc/nuts, NUT-01 — Mint public keys. https://github.com/cashubtc/nuts/blob/main/01.md
+4. cashubtc/nuts, NUT-02 — Keysets. https://github.com/cashubtc/nuts/blob/main/02.md
+5. cashubtc/nuts, NUT-03 — Swap. https://github.com/cashubtc/nuts/blob/main/03.md
 6. cashubtc/nuts, NUT-12 — Offline ecash via DLEQ proofs (mandatory in Hunch). https://github.com/cashubtc/nuts/blob/main/12.md
-7. cashubtc/cdk — Reference Cashu mint implementation in Rust. https://github.com/cashubtc/cdk
-8. HIP-1 — Nostr event kinds. [`./HIP-1.md`](./HIP-1.md)
-9. HIP-2 — DLC contract structure. [`./HIP-2.md`](./HIP-2.md)
+7. cashubtc/nuts#337 — NUTs for Prediction Markets (DRAFT; no longer a Hunch dependency). https://github.com/cashubtc/nuts/pull/337
+8. cashubtc/nuts#128 — Bilateral NUT-DLC (CLOSED 2025-05-20, historical). https://github.com/cashubtc/nuts/pull/128
+9. cashubtc/cdk — Reference Cashu implementation in Rust. https://github.com/cashubtc/cdk
+10. HIP-1 — Nostr event kinds. [`./HIP-1.md`](./HIP-1.md)
+11. HIP-2 — DLC contract structure. [`./HIP-2.md`](./HIP-2.md)
+12. HIP-4 — Oracle signing (single-key + FROST). [`./HIP-4.md`](./HIP-4.md)
 
 ---
 
-*HIP-3 — Cashu NUT-CTF integration. STATUS: DRAFT.*
+*HIP-3 — Conditional tokens via NUT-11 P2PK to the oracle signature point. STATUS: DRAFT.*
