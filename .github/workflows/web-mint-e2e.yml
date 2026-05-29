@@ -1,0 +1,67 @@
+name: web-mint-e2e
+
+# Browser-wallet end-to-end: cashu-ts mints a Hunch outcome token locked to L_X and redeems it
+# with l_X against a real running cdk-mintd. Runs on Linux (protoc + cdk-mintd build cleanly).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/hunch-web/**"
+      - "crates/hunch-mint/cdk-mintd.ci.toml"
+      - ".github/workflows/web-mint-e2e.yml"
+
+jobs:
+  e2e:
+    name: cashu-ts wallet e2e (fakewallet mint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Cache cargo + cdk-mintd binary
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cdk-mintd
+          key: cdk-mintd-bin-0.16-${{ runner.os }}
+
+      - name: Install cdk-mintd (fakewallet, no gRPC backends)
+        run: |
+          if [ ! -x "$HOME/.cargo/bin/cdk-mintd" ]; then
+            cargo install cdk-mintd --version 0.16.0 \
+              --no-default-features --features "fakewallet,sqlite,info-page"
+          fi
+
+      - name: Configure and start the mint
+        run: |
+          mkdir -p "$HOME/.cdk-mintd"
+          cp crates/hunch-mint/cdk-mintd.ci.toml "$HOME/.cdk-mintd/config.toml"
+          cdk-mintd > "$HOME/mintd.log" 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf http://127.0.0.1:8085/v1/info >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8085/v1/info >/dev/null || { cat "$HOME/mintd.log"; exit 1; }
+
+      - name: npm install + run wallet e2e
+        working-directory: apps/hunch-web
+        run: |
+          npm install --no-audit --no-fund
+          HUNCH_MINT_URL=http://127.0.0.1:8085 node --experimental-strip-types scripts/wallet-e2e.ts
+
+      - name: Mint logs (on failure)
+        if: failure()
+        run: cat "$HOME/mintd.log" || true
