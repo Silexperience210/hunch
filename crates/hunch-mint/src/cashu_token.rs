@@ -51,10 +51,35 @@ pub fn outcome_secret(lock_pubkey_hex: &str, refund_pubkey_hex: &str, refund_tim
 /// Builds an unblinded Cashu proof for the outcome lock, as a mint would issue it.
 ///
 /// `c` (the unblinded signature point) is a placeholder here — `verify_p2pk` checks only the
-/// witness against the secret's `data`, not `c`. A live mint supplies the real blind signature.
+/// witness against the secret's `data`, not `c`. A live mint supplies the real blind signature
+/// (see [`issue_via_bdhke`]).
 pub fn p2pk_proof(amount_sat: u64, lock_pubkey_hex: &str) -> Result<Proof> {
     let secret = p2pk_secret(lock_pubkey_hex)?;
     let c = PublicKey::from_hex(lock_pubkey_hex)?; // any valid point; not checked by verify_p2pk
+    let keyset_id = cashu::nuts::Id::from_str("009a1f293253e41e").context("keyset id")?;
+    Ok(Proof::new(Amount::from(amount_sat), keyset_id, secret, c))
+}
+
+/// Issues a real Cashu proof for `secret` by running the full NUT-00 BDHKE exchange:
+/// blind → mint blind-signs → unblind. The resulting proof carries a genuine mint signature
+/// `C` that `verify_message` validates.
+///
+/// This runs both the wallet and mint roles in-process (no Lightning) — a deployment splits them
+/// across the wire. It exists to prove that a blind-signed Hunch token redeems correctly.
+pub fn issue_via_bdhke(mint_secret: &cashu::nuts::SecretKey, amount_sat: u64, secret: Secret) -> Result<Proof> {
+    use cashu::dhke::{blind_message, sign_message, unblind_message, verify_message};
+
+    let mint_pubkey = mint_secret.public_key();
+    let secret_bytes: Vec<u8> = (&secret).into();
+
+    // Wallet blinds the secret; mint blind-signs; wallet unblinds.
+    let (blinded, r) = blind_message(&secret_bytes, None).context("blinding")?;
+    let blind_sig = sign_message(mint_secret, &blinded).context("mint blind-signing")?;
+    let c = unblind_message(&blind_sig, &r, &mint_pubkey).context("unblinding")?;
+
+    // The unblinded signature must verify under the mint key (NUT-00).
+    verify_message(mint_secret, c, &secret_bytes).context("issued token failed mint verification")?;
+
     let keyset_id = cashu::nuts::Id::from_str("009a1f293253e41e").context("keyset id")?;
     Ok(Proof::new(Amount::from(amount_sat), keyset_id, secret, c))
 }
@@ -151,6 +176,21 @@ mod tests {
         let mut proof = proof_with_secret(secret);
         proof.sign_p2pk(SecretKey::from_hex(BETTOR).unwrap()).unwrap();
         assert!(proof.verify_p2pk().is_err(), "refund key must not spend before locktime");
+    }
+
+    #[test]
+    fn full_cycle_blind_issue_then_conditional_redeem() {
+        // The complete mint↔bettor crypto cycle, in-process against real cashu:
+        // 1) mint blind-signs the bettor's outcome token (BDHKE issuance),
+        // 2) oracle attests YES → bettor derives l_YES and redeems (NUT-11 P2PK).
+        let mint_key = SecretKey::generate();
+        let secret = outcome_secret(&lock(Outcome::Yes), &bettor_pub(), now() + 1_000_000).unwrap();
+
+        let mut proof = issue_via_bdhke(&mint_key, 1000, secret).expect("BDHKE issuance");
+
+        let l_yes = outcome_unlock_secret(BETTOR, &attest(Outcome::Yes)).unwrap();
+        proof.sign_p2pk(SecretKey::from_hex(&l_yes).unwrap()).unwrap();
+        proof.verify_p2pk().expect("a blind-issued token redeems via the outcome path");
     }
 
     #[test]
