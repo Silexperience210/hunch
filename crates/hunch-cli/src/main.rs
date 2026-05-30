@@ -13,11 +13,14 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use hunch_cli::{
-    build_market, build_mint_announce, build_order, market_id, order_tags_with_d,
-    parse_market_event, parse_order_event, MarketParams, MintAnnounceParams, OrderParams,
+    build_dispute, build_market, build_mint_announce, build_order, build_reputation, market_id,
+    order_tags_with_d, parse_market_event, parse_order_event, DisputeParams, MarketParams,
+    MintAnnounceParams, OrderParams, ReputationParams,
 };
 use hunch_nostr::{build_signed_event, query_all, relay, verify_event};
-use hunch_protocol::event_kinds::{KIND_MARKET, KIND_MINT_ANNOUNCE, KIND_ORDER};
+use hunch_protocol::event_kinds::{
+    KIND_DISPUTE, KIND_MARKET, KIND_MINT_ANNOUNCE, KIND_ORDER, KIND_REPUTATION,
+};
 use hunch_protocol::order::{OrderKind, OrderSide};
 use secp256k1::{Keypair, Secp256k1, SecretKey};
 use serde_json::{json, Value};
@@ -52,6 +55,82 @@ enum Command {
     Mint {
         #[command(subcommand)]
         cmd: MintCmd,
+    },
+    /// Reputation attestations.
+    Reputation {
+        #[command(subcommand)]
+        cmd: ReputationCmd,
+    },
+    /// Settlement disputes.
+    Dispute {
+        #[command(subcommand)]
+        cmd: DisputeCmd,
+    },
+}
+
+#[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)] // clap subcommand enum; boxing would fight the derive
+enum ReputationCmd {
+    /// Sign (kind 30891) and publish a reputation attestation.
+    Rate {
+        #[command(flatten)]
+        key: KeyArgs,
+        #[command(flatten)]
+        net: NetArgs,
+        /// Reputation identifier (the `d` tag), e.g. `oracle:<pubkey>`.
+        #[arg(long)]
+        id: String,
+        /// Rated pubkey (x-only hex).
+        #[arg(long)]
+        target: String,
+        /// Scope: oracle, mint, market_creator, bettor.
+        #[arg(long)]
+        scope: String,
+        /// Score in [-100, 100].
+        #[arg(long)]
+        score: i16,
+        /// Optional stake-in-the-truth weight (sat).
+        #[arg(long)]
+        weight: Option<u64>,
+        /// Optional evidence URL / event id.
+        #[arg(long)]
+        evidence: Option<String>,
+        /// Optional market this claim is scoped to.
+        #[arg(long)]
+        market: Option<String>,
+        /// Optional methodology hint.
+        #[arg(long)]
+        method: Option<String>,
+        /// Free-form body.
+        #[arg(long, default_value = "")]
+        body: String,
+    },
+}
+
+#[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)] // clap subcommand enum; boxing would fight the derive
+enum DisputeCmd {
+    /// Sign (kind 30890) and publish a dispute against an attestation.
+    Raise {
+        #[command(flatten)]
+        key: KeyArgs,
+        #[command(flatten)]
+        net: NetArgs,
+        /// Dispute identifier (the `d` tag).
+        #[arg(long)]
+        id: String,
+        /// Market id being disputed.
+        #[arg(long)]
+        market: String,
+        /// Event id of the disputed kind:89 attestation.
+        #[arg(long)]
+        attestation: String,
+        /// Claim category, e.g. oracle_misread.
+        #[arg(long)]
+        claim: String,
+        /// Evidence body.
+        #[arg(long, default_value = "")]
+        evidence: String,
     },
 }
 
@@ -383,6 +462,86 @@ async fn main() -> Result<()> {
                     announce.reserves_proof
                 );
                 broadcast(&net, &event, "mint announce").await?;
+            }
+        },
+        Command::Reputation { cmd } => match cmd {
+            ReputationCmd::Rate {
+                key,
+                net,
+                id,
+                target,
+                scope,
+                score,
+                weight,
+                evidence,
+                market,
+                method,
+                body,
+            } => {
+                let keypair = key.keypair()?;
+                let rep = build_reputation(ReputationParams {
+                    d: id,
+                    target_pubkey: target,
+                    scope,
+                    score,
+                    weight,
+                    evidence,
+                    market,
+                    method,
+                    body,
+                })?;
+                let (tags, content) = rep.to_event_parts();
+                let event = build_signed_event(
+                    &Secp256k1::new(),
+                    &keypair,
+                    KIND_REPUTATION,
+                    tags,
+                    content,
+                    now(),
+                );
+                eprintln!(
+                    "reputation: {} {}… score={}",
+                    rep.scope.as_str(),
+                    short(&rep.target_pubkey),
+                    rep.score
+                );
+                broadcast(&net, &event, "reputation").await?;
+            }
+        },
+        Command::Dispute { cmd } => match cmd {
+            DisputeCmd::Raise {
+                key,
+                net,
+                id,
+                market,
+                attestation,
+                claim,
+                evidence,
+            } => {
+                let keypair = key.keypair()?;
+                let dispute = build_dispute(DisputeParams {
+                    d: id,
+                    market,
+                    attestation,
+                    claim,
+                    evidence,
+                })?;
+                let (tags, content) = dispute.to_event_parts();
+                let event = build_signed_event(
+                    &Secp256k1::new(),
+                    &keypair,
+                    KIND_DISPUTE,
+                    tags,
+                    content,
+                    now(),
+                );
+                eprintln!(
+                    "dispute: {} on {}… (re {}…)",
+                    dispute.claim,
+                    short(&dispute.market),
+                    short(&dispute.attestation)
+                );
+                broadcast(&net, &event, "dispute").await?;
             }
         },
     }

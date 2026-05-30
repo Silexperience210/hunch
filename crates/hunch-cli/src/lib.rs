@@ -3,11 +3,15 @@
 
 use anyhow::{Context, Result};
 use hunch_nostr::event_tags;
-use hunch_protocol::event_kinds::{KIND_MARKET, KIND_MINT_ANNOUNCE, KIND_ORDER};
+use hunch_protocol::dispute::Dispute;
+use hunch_protocol::event_kinds::{
+    KIND_DISPUTE, KIND_MARKET, KIND_MINT_ANNOUNCE, KIND_ORDER, KIND_REPUTATION,
+};
 use hunch_protocol::market::{DlcOutpoint, Market, MarketContent};
 use hunch_protocol::mint_announce::MintAnnounce;
 use hunch_protocol::order::{Order, OrderKind, OrderSide};
 use hunch_protocol::outcome::Outcome;
+use hunch_protocol::reputation::{Reputation, ReputationScope};
 use serde_json::Value;
 
 /// Minimum gap between expiry and refund_timeout mandated by HIP-2 §Refund Branch.
@@ -174,6 +178,81 @@ pub fn build_mint_announce(p: MintAnnounceParams) -> Result<MintAnnounce> {
     Ok(announce)
 }
 
+/// Inputs for a reputation attestation (kind 30891).
+pub struct ReputationParams {
+    /// Reputation event identifier (the `d` tag).
+    pub d: String,
+    /// Rated pubkey (x-only hex, the `p` tag).
+    pub target_pubkey: String,
+    /// Scope string: `oracle`, `mint`, `market_creator`, or `bettor`.
+    pub scope: String,
+    /// Score in [-100, +100].
+    pub score: i16,
+    /// Optional stake-in-the-truth weight (sat).
+    pub weight: Option<u64>,
+    /// Optional evidence URL / Nostr event id.
+    pub evidence: Option<String>,
+    /// Optional market this claim is scoped to.
+    pub market: Option<String>,
+    /// Optional methodology hint.
+    pub method: Option<String>,
+    /// Free-form body.
+    pub body: String,
+}
+
+/// Builds and validates a [`Reputation`] (round-trips through the protocol parser, which enforces
+/// the score range and pubkey/scope validity).
+pub fn build_reputation(p: ReputationParams) -> Result<Reputation> {
+    let scope: ReputationScope = p
+        .scope
+        .parse()
+        .map_err(|e| anyhow::anyhow!("invalid --scope: {e}"))?;
+    let rep = Reputation {
+        d: p.d,
+        target_pubkey: p.target_pubkey,
+        scope,
+        score: p.score,
+        weight: p.weight,
+        evidence: p.evidence,
+        market: p.market,
+        method: p.method,
+        body: p.body,
+    };
+    let (tags, content) = rep.to_event_parts();
+    Reputation::from_event(KIND_REPUTATION, &tags, &content)
+        .context("reputation failed protocol validation")?;
+    Ok(rep)
+}
+
+/// Inputs for a dispute (kind 30890).
+pub struct DisputeParams {
+    /// Dispute identifier (the `d` tag).
+    pub d: String,
+    /// Market id being disputed.
+    pub market: String,
+    /// Event id of the disputed kind:89 attestation.
+    pub attestation: String,
+    /// Claim category, e.g. `oracle_misread`.
+    pub claim: String,
+    /// Free-form evidence body.
+    pub evidence: String,
+}
+
+/// Builds and validates a [`Dispute`] (round-trips through the protocol parser).
+pub fn build_dispute(p: DisputeParams) -> Result<Dispute> {
+    let dispute = Dispute {
+        d: p.d,
+        market: p.market,
+        attestation: p.attestation,
+        claim: p.claim,
+        evidence: p.evidence,
+    };
+    let (tags, content) = dispute.to_event_parts();
+    Dispute::from_event(KIND_DISPUTE, &tags, &content)
+        .context("dispute failed protocol validation")?;
+    Ok(dispute)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,5 +377,61 @@ mod tests {
             body: String::new(),
         })
         .is_err());
+    }
+
+    #[test]
+    fn build_reputation_validates_scope_and_score() {
+        let rep = build_reputation(ReputationParams {
+            d: format!("oracle:{}", "aa".repeat(32)),
+            target_pubkey: "aa".repeat(32),
+            scope: "oracle".into(),
+            score: 75,
+            weight: Some(100_000),
+            evidence: None,
+            market: None,
+            method: None,
+            body: String::new(),
+        })
+        .unwrap();
+        assert_eq!(rep.score, 75);
+        // Out-of-range score is rejected by protocol validation.
+        let mut bad = ReputationParams {
+            d: "x".into(),
+            target_pubkey: "aa".repeat(32),
+            scope: "oracle".into(),
+            score: 150,
+            weight: None,
+            evidence: None,
+            market: None,
+            method: None,
+            body: String::new(),
+        };
+        assert!(build_reputation(bad).is_err());
+        // Unknown scope is rejected before construction.
+        bad = ReputationParams {
+            d: "x".into(),
+            target_pubkey: "aa".repeat(32),
+            scope: "miner".into(),
+            score: 10,
+            weight: None,
+            evidence: None,
+            market: None,
+            method: None,
+            body: String::new(),
+        };
+        assert!(build_reputation(bad).is_err());
+    }
+
+    #[test]
+    fn build_dispute_roundtrips() {
+        let dispute = build_dispute(DisputeParams {
+            d: format!("{}:30888:m", "cc".repeat(32)),
+            market: format!("{}:30888:m", "cc".repeat(32)),
+            attestation: "ab".repeat(32),
+            claim: "oracle_misread".into(),
+            evidence: "feed showed NO".into(),
+        })
+        .unwrap();
+        assert_eq!(dispute.claim, "oracle_misread");
     }
 }
