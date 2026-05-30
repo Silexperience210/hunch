@@ -9,6 +9,7 @@ import {
   KIND_ORDER,
   parseMarketEvent,
   parseOrderEvent,
+  type Dispute,
   type Market,
   type OracleAnnounce,
   type OracleAttestation,
@@ -18,7 +19,8 @@ import {
 import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
 import { DEFAULT_RELAYS, queryRelays } from "@/lib/relay";
 import { fetchAnnounce, fetchAttestation, fetchReputation } from "@/lib/oracle";
-import { buildOrderTemplate, buildReputationTemplate } from "@/lib/build";
+import { fetchDisputes } from "@/lib/disputes";
+import { buildDisputeTemplate, buildOrderTemplate, buildReputationTemplate } from "@/lib/build";
 import { signTemplate } from "@/lib/sign";
 import { publishAll } from "@/lib/publish";
 import { verifyEvent } from "@/lib/verify";
@@ -242,7 +244,99 @@ function MarketMeta({ id }: { id: string }) {
       >
         Bet →
       </Link>
+      <Disputes market={market.id} attestationId={settlement?.eventId} />
     </div>
+  );
+}
+
+const CLAIM_CATEGORIES = ["oracle_misread", "source_unavailable", "ambiguous_criteria", "premature", "other"];
+
+/** Lists disputes for a market (kind 30890) and lets the signed-in user contest the attestation. */
+function Disputes({ market, attestationId }: { market: string; attestationId?: string }) {
+  const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [claim, setClaim] = useState(CLAIM_CATEGORIES[0]);
+  const [evidence, setEvidence] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
+
+  const load = useCallback(async () => {
+    setDisputes(await fetchDisputes(DEFAULT_RELAYS, market));
+  }, [market]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function submit() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      if (!attestationId) throw new Error("nothing to dispute yet — the oracle has not attested");
+      const template = buildDisputeTemplate({
+        market,
+        attestation: attestationId,
+        claim: claim.trim(),
+        evidence: evidence.trim() || undefined,
+      });
+      const signed = await signTemplate(template);
+      const results = await publishAll(DEFAULT_RELAYS, signed);
+      const ok = results.filter((r) => r.accepted).length;
+      setStatus(`Published to ${ok}/${results.length} relays.`);
+      load();
+    } catch (e) {
+      setStatus("Error: " + (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2" style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+      <div className="font-bold">Disputes</div>
+      {disputes.length === 0 ? (
+        <p className="text-xs" style={{ color: "var(--muted)" }}>
+          No disputes raised.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2 text-sm">
+          {disputes.map((d) => (
+            <li key={d.disputer} className="flex flex-col gap-1 rounded p-2" style={{ border: "1px solid var(--border)" }}>
+              <div className="flex gap-2 flex-wrap">
+                <span style={{ color: "var(--accent)" }}>{d.claim}</span>
+                <span style={{ color: "var(--muted)" }}>· {d.disputer.slice(0, 8)}…</span>
+                <span style={{ color: "var(--muted)" }}>· re {d.attestation.slice(0, 10)}…</span>
+              </div>
+              {d.evidence && <div className="text-xs break-all">{d.evidence}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {attestationId ? (
+        <div className="flex gap-2 flex-wrap items-center text-sm">
+          <select style={field} className="px-2 py-1 rounded" value={claim} onChange={(e) => setClaim(e.target.value)}>
+            {CLAIM_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <input style={field} className="px-2 py-1 rounded flex-1 min-w-[200px]" value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="evidence (url / event id / note)" />
+          <button onClick={submit} disabled={busy} className="px-3 py-1 rounded" style={field}>
+            {busy ? "Signing…" : "Raise dispute"}
+          </button>
+        </div>
+      ) : (
+        <p className="text-xs" style={{ color: "var(--muted)" }}>
+          A dispute contests the oracle attestation — available once the market is settled.
+        </p>
+      )}
+      {status && (
+        <span style={{ color: "var(--muted)" }} className="text-xs">
+          {status}
+        </span>
+      )}
+    </section>
   );
 }
 

@@ -9,6 +9,7 @@ export const KIND_ORDER = 38888;
 export const KIND_ORACLE_ANNOUNCE = 88;
 export const KIND_ORACLE_ATTESTATION = 89;
 export const KIND_REPUTATION = 30891;
+export const KIND_DISPUTE = 30890;
 
 /** The HIP-2 canonical outcomes, in order. */
 export const OUTCOMES = ["YES", "NO", "INVALID"] as const;
@@ -160,6 +161,8 @@ export interface OracleAttestation {
   outcome: string;
   /** The DLC attestation signature (BIP-340 with the pre-committed nonce), 64-byte hex. */
   signature: string;
+  /** The kind:89 event id (so it can be referenced by a dispute). */
+  eventId: string;
 }
 
 /** Parses a kind:89 NIP-88 attestation, or returns null if malformed (mirrors `OracleAttestation::from_event`). */
@@ -172,7 +175,7 @@ export function parseAttestationEvent(ev: NostrEvent): OracleAttestation | null 
   if (!market || !outcome || !signature) return null;
   if (!(OUTCOMES as readonly string[]).includes(outcome)) return null;
   if (!/^[0-9a-f]{128}$/i.test(signature)) return null; // 64-byte hex
-  return { market, outcome, signature: signature.toLowerCase() };
+  return { market, outcome, signature: signature.toLowerCase(), eventId: ev.id };
 }
 
 /** HIP-5 reputation scopes (mirrors `ReputationScope`). */
@@ -235,6 +238,42 @@ export function aggregateReputation(reps: Reputation[]): ReputationSummary | nul
   if (byRater.size === 0) return null;
   const vals = [...byRater.values()].map((r) => r.score);
   return { avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length), count: byRater.size };
+}
+
+export interface Dispute {
+  /** The author of the dispute (event pubkey). */
+  disputer: string;
+  /** Dispute identifier — the `d` tag (this client sets it to the market id). */
+  d: string;
+  /** Market being disputed. */
+  market: string;
+  /** Event id of the disputed kind:89 attestation. */
+  attestation: string;
+  /** Short claim category, e.g. `oracle_misread`, `source_unavailable`. */
+  claim: string;
+  /** Free-form evidence body (content). */
+  evidence: string;
+  /** When the dispute was signed (for newest-per-disputer dedup). */
+  createdAt: number;
+}
+
+/** Parses a kind:30890 HIP-1 dispute, or null if malformed (mirrors `Dispute::from_event`). */
+export function parseDisputeEvent(ev: NostrEvent): Dispute | null {
+  if (ev.kind !== KIND_DISPUTE) return null;
+  const d = tagValue(ev.tags, "d");
+  const market = tagValue(ev.tags, "market");
+  const attestation = tagValue(ev.tags, "attestation");
+  const claim = tagValue(ev.tags, "claim");
+  if (!d || !market || !attestation || !claim) return null;
+  return {
+    disputer: ev.pubkey,
+    d,
+    market,
+    attestation,
+    claim,
+    evidence: ev.content,
+    createdAt: ev.created_at,
+  };
 }
 
 /**

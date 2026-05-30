@@ -11,6 +11,7 @@ import {
   parseAttestationEvent,
   parseReputationEvent,
   aggregateReputation,
+  parseDisputeEvent,
   computeEventId,
   canonicalSerialization,
   type NostrEvent,
@@ -227,4 +228,41 @@ test("aggregateReputation averages distinct raters, newest claim per rater", () 
 
 test("aggregateReputation returns null for no claims", () => {
   assert.strictEqual(aggregateReputation([]), null);
+});
+
+function disputeEvent(): NostrEvent {
+  const market = `${"cc".repeat(32)}:30888:btc-100k-eoy-2026`;
+  return {
+    id: "00".repeat(32),
+    pubkey: "ff".repeat(32),
+    created_at: 1_700_000_000,
+    kind: 30890,
+    tags: [
+      ["d", market],
+      ["market", market],
+      ["attestation", "ab".repeat(32)],
+      ["claim", "oracle_misread"],
+    ],
+    content: "the oracle attested YES but the feed shows NO",
+    sig: "00".repeat(64),
+  };
+}
+
+test("parseDisputeEvent extracts market, attestation, claim, evidence", () => {
+  const d = parseDisputeEvent(disputeEvent());
+  assert.ok(d);
+  assert.strictEqual(d!.disputer, "ff".repeat(32));
+  assert.strictEqual(d!.attestation, "ab".repeat(32));
+  assert.strictEqual(d!.claim, "oracle_misread");
+  assert.strictEqual(d!.evidence, "the oracle attested YES but the feed shows NO");
+});
+
+test("parseDisputeEvent rejects missing attestation/claim and wrong kind", () => {
+  assert.strictEqual(parseDisputeEvent({ ...disputeEvent(), kind: 1 }), null);
+  const noAttestation = disputeEvent();
+  noAttestation.tags = [["d", "m"], ["market", "m"], ["claim", "oracle_misread"]];
+  assert.strictEqual(parseDisputeEvent(noAttestation), null);
+  const noClaim = disputeEvent();
+  noClaim.tags = [["d", "m"], ["market", "m"], ["attestation", "ab".repeat(32)]];
+  assert.strictEqual(parseDisputeEvent(noClaim), null);
 });

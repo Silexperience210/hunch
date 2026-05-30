@@ -1,7 +1,14 @@
 // Event templates for the write path (mirrors hunch-cli's build_market / order_tags_with_d).
 // Pure tag/content assembly — offline-testable. Signing happens via NIP-07 in `sign.ts`.
 
-import { KIND_MARKET, KIND_ORDER, KIND_REPUTATION, OUTCOMES, type ReputationScope } from "./hunch.ts";
+import {
+  KIND_DISPUTE,
+  KIND_MARKET,
+  KIND_ORDER,
+  KIND_REPUTATION,
+  OUTCOMES,
+  type ReputationScope,
+} from "./hunch.ts";
 
 const SEVEN_DAYS = 7 * 24 * 3600;
 
@@ -106,4 +113,29 @@ export function buildReputationTemplate(input: ReputationInput): EventTemplate {
   ];
   if (input.market) tags.push(["market", input.market]);
   return { kind: KIND_REPUTATION, tags, content: input.note ?? "" };
+}
+
+export interface DisputeInput {
+  /** Market being disputed (`<creator>:30888:<d>`). */
+  market: string;
+  /** Event id of the disputed kind:89 attestation. */
+  attestation: string;
+  /** Short claim category, e.g. `oracle_misread`, `source_unavailable`. */
+  claim: string;
+  /** Free-form evidence body. */
+  evidence?: string;
+}
+
+/**
+ * Builds the unsigned kind:30890 dispute (mirrors `Dispute::to_event_parts`).
+ * `d` == market, so a disputer holds one replaceable dispute per market and clients filter by `#d`.
+ */
+export function buildDisputeTemplate(input: DisputeInput): EventTemplate {
+  const tags: string[][] = [
+    ["d", input.market],
+    ["market", input.market],
+    ["attestation", input.attestation],
+    ["claim", input.claim],
+  ];
+  return { kind: KIND_DISPUTE, tags, content: input.evidence ?? "" };
 }
