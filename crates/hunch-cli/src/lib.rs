@@ -3,8 +3,9 @@
 
 use anyhow::{Context, Result};
 use hunch_nostr::event_tags;
-use hunch_protocol::event_kinds::{KIND_MARKET, KIND_ORDER};
+use hunch_protocol::event_kinds::{KIND_MARKET, KIND_MINT_ANNOUNCE, KIND_ORDER};
 use hunch_protocol::market::{DlcOutpoint, Market, MarketContent};
+use hunch_protocol::mint_announce::MintAnnounce;
 use hunch_protocol::order::{Order, OrderKind, OrderSide};
 use hunch_protocol::outcome::Outcome;
 use serde_json::Value;
@@ -143,6 +144,36 @@ pub fn parse_order_event(ev: &Value) -> Result<(String, Order)> {
     Ok((pubkey.to_string(), order))
 }
 
+/// Inputs for a mint announce (kind 30892).
+pub struct MintAnnounceParams {
+    /// Mint identifier (the `d` tag).
+    pub mint_id: String,
+    /// Mint endpoint URL (https / onion / ipfs).
+    pub endpoint: String,
+    /// Latest reserves-proof URL (HIP-3 transparency).
+    pub reserves_proof: String,
+    /// Accepted oracle x-only pubkeys (hex, 32 bytes each).
+    pub supported_oracles: Vec<String>,
+    /// Free-form policy body (JSON).
+    pub body: String,
+}
+
+/// Builds and validates a [`MintAnnounce`] (round-trips through the protocol parser, which
+/// rejects malformed oracle pubkeys), so an announce that builds here parses on the other side.
+pub fn build_mint_announce(p: MintAnnounceParams) -> Result<MintAnnounce> {
+    let announce = MintAnnounce {
+        d: p.mint_id,
+        endpoint: p.endpoint,
+        reserves_proof: p.reserves_proof,
+        supported_oracles: p.supported_oracles,
+        body: p.body,
+    };
+    let (tags, content) = announce.to_event_parts();
+    MintAnnounce::from_event(KIND_MINT_ANNOUNCE, &tags, &content)
+        .context("mint announce failed protocol validation")?;
+    Ok(announce)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,5 +276,27 @@ mod tests {
         assert_eq!(tags[0], vec!["d".to_string(), "x".to_string()]);
         assert_eq!(tags[1], vec!["t".to_string()]); // the numeric 5 is dropped
         assert_eq!(tags_from_event(&json!({})), Vec::<Vec<String>>::new());
+    }
+
+    #[test]
+    fn build_mint_announce_validates_and_roundtrips() {
+        let announce = build_mint_announce(MintAnnounceParams {
+            mint_id: "hunch-mint-1".into(),
+            endpoint: "https://mint.hunch.markets".into(),
+            reserves_proof: "https://mint.hunch.markets/reserves/2026-W22".into(),
+            supported_oracles: vec!["aa".repeat(32), "bb".repeat(32)],
+            body: "{\"max_market_sat\":10000000}".into(),
+        })
+        .unwrap();
+        assert_eq!(announce.supported_oracles.len(), 2);
+        // A malformed oracle pubkey must be rejected by protocol validation.
+        assert!(build_mint_announce(MintAnnounceParams {
+            mint_id: "m".into(),
+            endpoint: "https://x".into(),
+            reserves_proof: "https://x/r".into(),
+            supported_oracles: vec!["not-hex".into()],
+            body: String::new(),
+        })
+        .is_err());
     }
 }

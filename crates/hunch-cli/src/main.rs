@@ -13,11 +13,11 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use hunch_cli::{
-    build_market, build_order, market_id, order_tags_with_d, parse_market_event, parse_order_event,
-    MarketParams, OrderParams,
+    build_market, build_mint_announce, build_order, market_id, order_tags_with_d,
+    parse_market_event, parse_order_event, MarketParams, MintAnnounceParams, OrderParams,
 };
 use hunch_nostr::{build_signed_event, query_all, relay, verify_event};
-use hunch_protocol::event_kinds::{KIND_MARKET, KIND_ORDER};
+use hunch_protocol::event_kinds::{KIND_MARKET, KIND_MINT_ANNOUNCE, KIND_ORDER};
 use hunch_protocol::order::{OrderKind, OrderSide};
 use secp256k1::{Keypair, Secp256k1, SecretKey};
 use serde_json::{json, Value};
@@ -47,6 +47,38 @@ enum Command {
     Order {
         #[command(subcommand)]
         cmd: OrderCmd,
+    },
+    /// Mint operator operations.
+    Mint {
+        #[command(subcommand)]
+        cmd: MintCmd,
+    },
+}
+
+#[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)] // clap subcommand enum; boxing would fight the derive
+enum MintCmd {
+    /// Publish a mint announce (kind 30892) with the reserves proof.
+    Announce {
+        #[command(flatten)]
+        key: KeyArgs,
+        #[command(flatten)]
+        net: NetArgs,
+        /// Mint identifier (the `d` tag).
+        #[arg(long)]
+        mint_id: String,
+        /// Mint endpoint URL (https / onion / ipfs).
+        #[arg(long)]
+        endpoint: String,
+        /// Latest reserves-proof URL.
+        #[arg(long)]
+        reserves_proof: String,
+        /// Accepted oracle x-only pubkeys (comma-separated hex).
+        #[arg(long, value_delimiter = ',')]
+        supported_oracles: Vec<String>,
+        /// Free-form policy body (JSON).
+        #[arg(long, default_value = "")]
+        body: String,
     },
 }
 
@@ -315,6 +347,42 @@ async fn main() -> Result<()> {
                 let filter = json!({ "kinds": [KIND_ORDER], "#d": [market], "limit": limit });
                 let events = query_all(&relays, filter, Duration::from_secs(net.timeout)).await;
                 print_orders(events, &market);
+            }
+        },
+        Command::Mint { cmd } => match cmd {
+            MintCmd::Announce {
+                key,
+                net,
+                mint_id,
+                endpoint,
+                reserves_proof,
+                supported_oracles,
+                body,
+            } => {
+                let keypair = key.keypair()?;
+                let announce = build_mint_announce(MintAnnounceParams {
+                    mint_id,
+                    endpoint,
+                    reserves_proof,
+                    supported_oracles,
+                    body,
+                })?;
+                let (tags, content) = announce.to_event_parts();
+                let event = build_signed_event(
+                    &Secp256k1::new(),
+                    &keypair,
+                    KIND_MINT_ANNOUNCE,
+                    tags,
+                    content,
+                    now(),
+                );
+                eprintln!(
+                    "mint announce: {} ({} oracle(s)) reserves={}",
+                    announce.d,
+                    announce.supported_oracles.len(),
+                    announce.reserves_proof
+                );
+                broadcast(&net, &event, "mint announce").await?;
             }
         },
     }
