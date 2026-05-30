@@ -77,3 +77,24 @@ export function buildOrderTemplate(p: OrderParams): EventTemplate {
     content: "",
   };
 }
+
+export interface ReputationInput {
+  /** Oracle pubkey being rated (x-only hex). */
+  subject: string;
+  /** Score 0-100. */
+  rating: number;
+  /** Optional market this claim references. */
+  market?: string;
+  /** Free-form justification. */
+  note?: string;
+}
+
+/** Builds the unsigned kind:30891 reputation claim, with `d` == subject (addressable + #d-filterable). */
+export function buildReputationTemplate(input: ReputationInput): EventTemplate {
+  const tags: string[][] = [
+    ["d", input.subject],
+    ["rating", String(input.rating)],
+  ];
+  if (input.market) tags.push(["market", input.market]);
+  return { kind: KIND_REPUTATION, tags, content: input.note ?? "" };
+}
