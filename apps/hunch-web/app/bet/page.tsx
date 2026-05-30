@@ -14,10 +14,10 @@ const REFUND_LOCKTIME = Math.floor(Date.now() / 1000) + 90 * 24 * 3600; // 90 da
 
 function BetView() {
   const params = useSearchParams();
-  const [mintUrl, setMintUrl] = useState("http://127.0.0.1:8085");
+  const [mintUrl, setMintUrl] = useState(params.get("mint") || "http://127.0.0.1:8085");
   const [market, setMarket] = useState(params.get("id") ?? "");
   const [oracle, setOracle] = useState(params.get("oracle") ?? "");
-  const [nonce, setNonce] = useState("");
+  const [nonce, setNonce] = useState(params.get("nonce") ?? "");
   const [relays, setRelays] = useState(DEFAULT_RELAYS.join(", "));
   const [outcome, setOutcome] = useState<"YES" | "NO">("YES");
   const [amount, setAmount] = useState("100");

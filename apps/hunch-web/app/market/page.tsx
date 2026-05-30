@@ -3,9 +3,19 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { KIND_ORDER, parseOrderEvent, type Order } from "@/lib/hunch";
+import {
+  KIND_MARKET,
+  KIND_ORDER,
+  parseMarketEvent,
+  parseOrderEvent,
+  type Market,
+  type OracleAnnounce,
+  type OracleAttestation,
+  type Order,
+} from "@/lib/hunch";
 import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
 import { DEFAULT_RELAYS, queryRelays } from "@/lib/relay";
+import { fetchAnnounce, fetchAttestation } from "@/lib/oracle";
 import { buildOrderTemplate } from "@/lib/build";
 import { signTemplate } from "@/lib/sign";
 import { publishAll } from "@/lib/publish";
@@ -93,6 +103,94 @@ function OrderForm({ market, onPosted }: { market: string; onPosted: () => void 
   );
 }
 
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2">
+      <span style={{ color: "var(--muted)" }} className="w-28 shrink-0">{label}</span>
+      <span className="break-all">{value}</span>
+    </div>
+  );
+}
+
+/** Deep-link to /bet with everything the wallet needs pre-filled (mint + nonce when known). */
+function betHref(market: Market, announce: OracleAnnounce | null): string {
+  const q = new URLSearchParams({ id: market.id, oracle: market.oracle, mint: market.mint });
+  if (announce) q.set("nonce", announce.nonce);
+  return `/bet?${q.toString()}`;
+}
+
+/** The settlement: the oracle's resolved outcome + the Schnorr signature (CLAUDE.md: always visible). */
+function SettlementBanner({ s }: { s: OracleAttestation }) {
+  const resolved = s.outcome === "INVALID" ? "INVALID (refunds)" : s.outcome;
+  return (
+    <section className="flex flex-col gap-1 rounded p-3" style={{ border: "1px solid var(--accent)" }}>
+      <div className="text-sm font-bold" style={{ color: "var(--accent)" }}>
+        Settled: {resolved}
+      </div>
+      <div className="text-xs" style={{ color: "var(--muted)" }}>
+        Oracle Schnorr signature (verify it yourself — relays are untrusted):
+      </div>
+      <code className="text-xs break-all">{s.signature}</code>
+    </section>
+  );
+}
+
+/** Market metadata + oracle status + settlement, fetched from the kind:30888 / 88 / 89 events. */
+function MarketMeta({ id }: { id: string }) {
+  const [market, setMarket] = useState<Market | null>(null);
+  const [announce, setAnnounce] = useState<OracleAnnounce | null>(null);
+  const [settlement, setSettlement] = useState<OracleAttestation | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // id == `<creator>:30888:<d>` — query the creator's market event and verify it.
+      const [creator, , ...rest] = id.split(":");
+      const d = rest.join(":");
+      if (!creator || !d) return;
+      const events = await queryRelays(DEFAULT_RELAYS, { kinds: [KIND_MARKET], authors: [creator], "#d": [d], limit: 5 });
+      const m = events.filter(verifyEvent).map(parseMarketEvent).find((x): x is Market => x !== null && x.id === id);
+      if (cancelled || !m) return;
+      setMarket(m);
+      const [a, s] = await Promise.all([
+        fetchAnnounce(DEFAULT_RELAYS, m.oracle, m.id),
+        fetchAttestation(DEFAULT_RELAYS, m.oracle, m.id),
+      ]);
+      if (!cancelled) {
+        setAnnounce(a);
+        setSettlement(s);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (!market) return null;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="font-bold">{market.content.question}</div>
+      {settlement && <SettlementBanner s={settlement} />}
+      <section className="flex flex-col gap-1 text-sm">
+        <Row label="oracle" value={market.oracle} />
+        <Row label="mint" value={market.mint} />
+        <Row label="dlc_contract" value={market.dlcContract} />
+        <Row label="expiry" value={new Date(market.expiry * 1000).toISOString()} />
+        <Row label="resolution" value={market.content.resolution_criteria || "—"} />
+        <Row label="oracle nonce" value={announce ? `committed (${announce.nonce.slice(0, 16)}…)` : "not announced yet"} />
+      </section>
+      <Link
+        href={betHref(market, announce)}
+        className="self-start text-sm px-4 py-2 rounded font-bold"
+        style={{ background: "var(--accent)", color: "#000" }}
+      >
+        Bet →
+      </Link>
+    </div>
+  );
+}
+
 function MarketView() {
   const params = useSearchParams();
   const id = params.get("id") ?? "";
@@ -138,6 +236,8 @@ function MarketView() {
           {id}
         </h1>
       </div>
+
+      {id && <MarketMeta id={id} />}
 
       <button
         onClick={load}
