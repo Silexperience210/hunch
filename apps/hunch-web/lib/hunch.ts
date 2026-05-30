@@ -166,9 +166,10 @@ export function parseAttestationEvent(ev: NostrEvent): OracleAttestation | null 
   if (ev.kind !== KIND_ORACLE_ATTESTATION) return null;
   const market = tagValue(ev.tags, "market");
   const outcome = tagValue(ev.tags, "outcome");
-  if (!market || !outcome) return null;
+  // The signature lives in the `sig` tag with empty content (see OracleAttestation::to_event_parts).
+  const signature = tagValue(ev.tags, "sig")?.trim();
+  if (!market || !outcome || !signature) return null;
   if (!(OUTCOMES as readonly string[]).includes(outcome)) return null;
-  const signature = ev.content.trim();
   if (!/^[0-9a-f]{128}$/i.test(signature)) return null; // 64-byte hex
   return { market, outcome, signature: signature.toLowerCase() };
 }

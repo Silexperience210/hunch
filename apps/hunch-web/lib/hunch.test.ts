@@ -137,8 +137,9 @@ function attestationEvent(): NostrEvent {
     tags: [
       ["market", `${"cc".repeat(32)}:30888:btc-100k-eoy-2026`],
       ["outcome", "YES"],
+      ["sig", "cd".repeat(64)],
     ],
-    content: "cd".repeat(64),
+    content: "",
     sig: "00".repeat(64),
   };
 }
@@ -166,7 +167,9 @@ test("parseAttestationEvent extracts the 64-byte signature and outcome", () => {
 
 test("parseAttestationEvent rejects unknown outcome and bad signature length", () => {
   const badOutcome = attestationEvent();
-  badOutcome.tags = [["market", "m"], ["outcome", "MAYBE"]];
+  badOutcome.tags = [["market", "m"], ["outcome", "MAYBE"], ["sig", "cd".repeat(64)]];
   assert.strictEqual(parseAttestationEvent(badOutcome), null);
-  assert.strictEqual(parseAttestationEvent({ ...attestationEvent(), content: "deadbeef" }), null);
+  const badSig = attestationEvent();
+  badSig.tags = [["market", "m"], ["outcome", "YES"], ["sig", "deadbeef"]];
+  assert.strictEqual(parseAttestationEvent(badSig), null);
 });
