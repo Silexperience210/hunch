@@ -10,6 +10,7 @@ export const KIND_ORACLE_ANNOUNCE = 88;
 export const KIND_ORACLE_ATTESTATION = 89;
 export const KIND_REPUTATION = 30891;
 export const KIND_DISPUTE = 30890;
+export const KIND_MINT_ANNOUNCE = 30892;
 
 /** The HIP-2 canonical outcomes, in order. */
 export const OUTCOMES = ["YES", "NO", "INVALID"] as const;
@@ -272,6 +273,41 @@ export function parseDisputeEvent(ev: NostrEvent): Dispute | null {
     attestation,
     claim,
     evidence: ev.content,
+    createdAt: ev.created_at,
+  };
+}
+
+export interface MintAnnounce {
+  /** The mint identifier — the `d` tag. */
+  mintId: string;
+  /** Mint endpoint URL (HTTPS, onion, or IPFS gateway). */
+  endpoint: string;
+  /** Latest reserves-proof URL (HIP-3 transparency — required). */
+  reservesProof: string;
+  /** Pubkeys (x-only hex) of the oracles this mint accepts. */
+  supportedOracles: string[];
+  /** Free-form body — mint policy JSON (content). */
+  body: string;
+  /** When the announce was signed (for newest dedup). */
+  createdAt: number;
+}
+
+/** Parses a kind:30892 HIP-1 mint announce, or null if malformed (mirrors `MintAnnounce::from_event`). */
+export function parseMintAnnounceEvent(ev: NostrEvent): MintAnnounce | null {
+  if (ev.kind !== KIND_MINT_ANNOUNCE) return null;
+  const mintId = tagValue(ev.tags, "d");
+  const endpoint = tagValue(ev.tags, "endpoint");
+  const reservesProof = tagValue(ev.tags, "reserves_proof");
+  const supportedRaw = tagValue(ev.tags, "supported_oracles");
+  if (!mintId || !endpoint || !reservesProof || supportedRaw == null) return null;
+  const supportedOracles = supportedRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  for (const p of supportedOracles) if (!/^[0-9a-f]{64}$/i.test(p)) return null; // 32-byte hex
+  return {
+    mintId,
+    endpoint,
+    reservesProof,
+    supportedOracles: supportedOracles.map((s) => s.toLowerCase()),
+    body: ev.content,
     createdAt: ev.created_at,
   };
 }

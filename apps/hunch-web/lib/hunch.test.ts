@@ -12,6 +12,7 @@ import {
   parseReputationEvent,
   aggregateReputation,
   parseDisputeEvent,
+  parseMintAnnounceEvent,
   computeEventId,
   canonicalSerialization,
   type NostrEvent,
@@ -265,4 +266,39 @@ test("parseDisputeEvent rejects missing attestation/claim and wrong kind", () =>
   const noClaim = disputeEvent();
   noClaim.tags = [["d", "m"], ["market", "m"], ["attestation", "ab".repeat(32)]];
   assert.strictEqual(parseDisputeEvent(noClaim), null);
+});
+
+function mintAnnounceEvent(): NostrEvent {
+  return {
+    id: "00".repeat(32),
+    pubkey: "ee".repeat(32),
+    created_at: 1_700_000_000,
+    kind: 30892,
+    tags: [
+      ["d", "hunch-mint-1"],
+      ["endpoint", "https://mint.hunch.markets"],
+      ["reserves_proof", "https://mint.hunch.markets/reserves/2026-W22"],
+      ["supported_oracles", `${"aa".repeat(32)},${"bb".repeat(32)}`],
+    ],
+    content: '{"max_market_sat":10000000}',
+    sig: "00".repeat(64),
+  };
+}
+
+test("parseMintAnnounceEvent extracts endpoint, reserves proof, supported oracles", () => {
+  const m = parseMintAnnounceEvent(mintAnnounceEvent());
+  assert.ok(m);
+  assert.strictEqual(m!.endpoint, "https://mint.hunch.markets");
+  assert.strictEqual(m!.reservesProof, "https://mint.hunch.markets/reserves/2026-W22");
+  assert.deepStrictEqual(m!.supportedOracles, ["aa".repeat(32), "bb".repeat(32)]);
+});
+
+test("parseMintAnnounceEvent rejects missing tags, bad oracle hex, wrong kind", () => {
+  assert.strictEqual(parseMintAnnounceEvent({ ...mintAnnounceEvent(), kind: 1 }), null);
+  const noProof = mintAnnounceEvent();
+  noProof.tags = [["d", "x"], ["endpoint", "https://x"], ["supported_oracles", ""]];
+  assert.strictEqual(parseMintAnnounceEvent(noProof), null);
+  const badOracle = mintAnnounceEvent();
+  badOracle.tags = [["d", "x"], ["endpoint", "https://x"], ["reserves_proof", "https://x/r"], ["supported_oracles", "not-hex"]];
+  assert.strictEqual(parseMintAnnounceEvent(badOracle), null);
 });

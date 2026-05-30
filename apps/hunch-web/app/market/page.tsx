@@ -11,6 +11,7 @@ import {
   parseOrderEvent,
   type Dispute,
   type Market,
+  type MintAnnounce,
   type OracleAnnounce,
   type OracleAttestation,
   type Order,
@@ -19,6 +20,7 @@ import {
 import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
 import { DEFAULT_RELAYS, queryRelays } from "@/lib/relay";
 import { fetchAnnounce, fetchAttestation, fetchReputation } from "@/lib/oracle";
+import { fetchMintAnnounce } from "@/lib/mint";
 import { fetchDisputes } from "@/lib/disputes";
 import { buildDisputeTemplate, buildOrderTemplate, buildReputationTemplate } from "@/lib/build";
 import { signTemplate } from "@/lib/sign";
@@ -184,6 +186,7 @@ function MarketMeta({ id }: { id: string }) {
   const [announce, setAnnounce] = useState<OracleAnnounce | null>(null);
   const [settlement, setSettlement] = useState<OracleAttestation | null>(null);
   const [rep, setRep] = useState<ReputationSummary | null>(null);
+  const [mintAnnounce, setMintAnnounce] = useState<MintAnnounce | null>(null);
 
   // Reputation can be refreshed independently (after the user rates the oracle).
   const loadRep = useCallback(async (oracle: string) => {
@@ -202,14 +205,16 @@ function MarketMeta({ id }: { id: string }) {
       const m = events.filter(verifyEvent).map(parseMarketEvent).find((x): x is Market => x !== null && x.id === id);
       if (cancelled || !m) return;
       setMarket(m);
-      const [a, s] = await Promise.all([
+      const [a, s, , mint] = await Promise.all([
         fetchAnnounce(DEFAULT_RELAYS, m.oracle, m.id),
         fetchAttestation(DEFAULT_RELAYS, m.oracle, m.id),
         loadRep(m.oracle),
+        fetchMintAnnounce(DEFAULT_RELAYS, m.mint),
       ]);
       if (!cancelled) {
         setAnnounce(a);
         setSettlement(s);
+        setMintAnnounce(mint);
       }
     })();
     return () => {
@@ -222,6 +227,8 @@ function MarketMeta({ id }: { id: string }) {
   const repText = rep
     ? `${rep.avg >= 0 ? "+" : ""}${rep.avg} (range -100..100, ${rep.count} rater${rep.count === 1 ? "" : "s"})`
     : "no ratings yet";
+  const reserves = mintAnnounce?.reservesProof;
+  const oracleBacked = mintAnnounce ? mintAnnounce.supportedOracles.includes(market.oracle.toLowerCase()) : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -231,6 +238,25 @@ function MarketMeta({ id }: { id: string }) {
         <Row label="oracle" value={market.oracle} />
         <Row label="reputation" value={repText} />
         <Row label="mint" value={market.mint} />
+        <div className="flex gap-2">
+          <span style={{ color: "var(--muted)" }} className="w-28 shrink-0">reserves</span>
+          {reserves ? (
+            /^https?:\/\//.test(reserves) ? (
+              <a href={reserves} target="_blank" rel="noreferrer" className="break-all" style={{ color: "var(--accent)" }}>
+                {reserves}
+              </a>
+            ) : (
+              <span className="break-all">{reserves}</span>
+            )
+          ) : (
+            <span className="break-all" style={{ color: "var(--muted)" }}>
+              no mint announce
+            </span>
+          )}
+        </div>
+        {oracleBacked !== null && (
+          <Row label="oracle backed" value={oracleBacked ? "yes — mint accepts this oracle" : "⚠ mint does not list this oracle"} />
+        )}
         <Row label="dlc_contract" value={market.dlcContract} />
         <Row label="expiry" value={new Date(market.expiry * 1000).toISOString()} />
         <Row label="resolution" value={market.content.resolution_criteria || "—"} />
