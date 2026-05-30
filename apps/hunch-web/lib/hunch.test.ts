@@ -177,33 +177,39 @@ test("parseAttestationEvent rejects unknown outcome and bad signature length", (
   assert.strictEqual(parseAttestationEvent(badSig), null);
 });
 
-function reputationEvent(rater: string, rating: string, createdAt = 1_700_000_000): NostrEvent {
+function reputationEvent(rater: string, score: string, createdAt = 1_700_000_000): NostrEvent {
   return {
     id: "00".repeat(32),
     pubkey: rater,
     created_at: createdAt,
     kind: 30891,
     tags: [
-      ["d", "aa".repeat(32)],
-      ["rating", rating],
+      ["d", `oracle:${"aa".repeat(32)}`],
+      ["p", "aa".repeat(32)],
+      ["scope", "oracle"],
+      ["score", score],
     ],
     content: "honest settlement history",
     sig: "00".repeat(64),
   };
 }
 
-test("parseReputationEvent extracts rater, subject, rating", () => {
+test("parseReputationEvent extracts rater, target, scope, score", () => {
   const r = parseReputationEvent(reputationEvent("bb".repeat(32), "80"));
   assert.ok(r);
   assert.strictEqual(r!.rater, "bb".repeat(32));
-  assert.strictEqual(r!.subject, "aa".repeat(32));
-  assert.strictEqual(r!.rating, 80);
+  assert.strictEqual(r!.target, "aa".repeat(32));
+  assert.strictEqual(r!.scope, "oracle");
+  assert.strictEqual(r!.score, 80);
 });
 
-test("parseReputationEvent rejects out-of-range or non-integer ratings", () => {
+test("parseReputationEvent rejects out-of-range score, bad scope, non-integer", () => {
   assert.strictEqual(parseReputationEvent(reputationEvent("bb".repeat(32), "101")), null);
-  assert.strictEqual(parseReputationEvent(reputationEvent("bb".repeat(32), "-1")), null);
+  assert.strictEqual(parseReputationEvent(reputationEvent("bb".repeat(32), "-101")), null);
   assert.strictEqual(parseReputationEvent(reputationEvent("bb".repeat(32), "x")), null);
+  const badScope = reputationEvent("bb".repeat(32), "10");
+  badScope.tags = [["d", "miner:x"], ["p", "aa".repeat(32)], ["scope", "miner"], ["score", "10"]];
+  assert.strictEqual(parseReputationEvent(badScope), null);
 });
 
 test("aggregateReputation averages distinct raters, newest claim per rater", () => {

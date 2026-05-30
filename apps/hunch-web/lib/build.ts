@@ -1,7 +1,7 @@
 // Event templates for the write path (mirrors hunch-cli's build_market / order_tags_with_d).
 // Pure tag/content assembly — offline-testable. Signing happens via NIP-07 in `sign.ts`.
 
-import { KIND_MARKET, KIND_ORDER, KIND_REPUTATION, OUTCOMES } from "./hunch.ts";
+import { KIND_MARKET, KIND_ORDER, KIND_REPUTATION, OUTCOMES, type ReputationScope } from "./hunch.ts";
 
 const SEVEN_DAYS = 7 * 24 * 3600;
 
@@ -79,21 +79,30 @@ export function buildOrderTemplate(p: OrderParams): EventTemplate {
 }
 
 export interface ReputationInput {
-  /** Oracle pubkey being rated (x-only hex). */
+  /** Pubkey being rated (x-only hex) — the `p` tag. */
   subject: string;
-  /** Score 0-100. */
-  rating: number;
-  /** Optional market this claim references. */
+  /** What is being rated (default "oracle"). */
+  scope?: ReputationScope;
+  /** Score in [-100, +100]. */
+  score: number;
+  /** Optional market this claim is scoped to. */
   market?: string;
   /** Free-form justification. */
   note?: string;
 }
 
-/** Builds the unsigned kind:30891 reputation claim, with `d` == subject (addressable + #d-filterable). */
+/**
+ * Builds the unsigned kind:30891 reputation claim (mirrors `Reputation::to_event_parts`).
+ * `d` == `<scope>:<subject>` so a rater holds one replaceable claim per (target, scope);
+ * the rated pubkey is the `p` tag (relay-indexed, so clients filter by `#p`).
+ */
 export function buildReputationTemplate(input: ReputationInput): EventTemplate {
+  const scope = input.scope ?? "oracle";
   const tags: string[][] = [
-    ["d", input.subject],
-    ["rating", String(input.rating)],
+    ["d", `${scope}:${input.subject}`],
+    ["p", input.subject],
+    ["scope", scope],
+    ["score", String(input.score)],
   ];
   if (input.market) tags.push(["market", input.market]);
   return { kind: KIND_REPUTATION, tags, content: input.note ?? "" };

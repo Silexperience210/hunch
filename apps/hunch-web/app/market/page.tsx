@@ -139,7 +139,7 @@ function SettlementBanner({ s }: { s: OracleAttestation }) {
 
 /** Lets the signed-in user rate an oracle (HIP-5 kind 30891), then refreshes the summary. */
 function RateOracleForm({ oracle, market, onRated }: { oracle: string; market: string; onRated: () => void }) {
-  const [rating, setRating] = useState("80");
+  const [score, setScore] = useState("50");
   const [note, setNote] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -149,9 +149,9 @@ function RateOracleForm({ oracle, market, onRated }: { oracle: string; market: s
     setBusy(true);
     setStatus(null);
     try {
-      const n = Number(rating);
-      if (!Number.isInteger(n) || n < 0 || n > 100) throw new Error("rating must be an integer 0-100");
-      const template = buildReputationTemplate({ subject: oracle, rating: n, market, note: note.trim() });
+      const n = Number(score);
+      if (!Number.isInteger(n) || n < -100 || n > 100) throw new Error("score must be an integer -100..100");
+      const template = buildReputationTemplate({ subject: oracle, scope: "oracle", score: n, market, note: note.trim() });
       const signed = await signTemplate(template);
       const results = await publishAll(DEFAULT_RELAYS, signed);
       const ok = results.filter((r) => r.accepted).length;
@@ -166,7 +166,7 @@ function RateOracleForm({ oracle, market, onRated }: { oracle: string; market: s
 
   return (
     <div className="flex gap-2 flex-wrap items-center text-sm">
-      <input style={field} className="px-2 py-1 rounded w-20" value={rating} onChange={(e) => setRating(e.target.value)} placeholder="0-100" />
+      <input style={field} className="px-2 py-1 rounded w-24" value={score} onChange={(e) => setScore(e.target.value)} placeholder="-100..100" />
       <input style={field} className="px-2 py-1 rounded flex-1 min-w-[160px]" value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
       <button onClick={submit} disabled={busy} className="px-3 py-1 rounded" style={field}>
         {busy ? "Signing…" : "Rate oracle"}
@@ -217,7 +217,9 @@ function MarketMeta({ id }: { id: string }) {
 
   if (!market) return null;
 
-  const repText = rep ? `${rep.avg}/100 (${rep.count} rater${rep.count === 1 ? "" : "s"})` : "no ratings yet";
+  const repText = rep
+    ? `${rep.avg >= 0 ? "+" : ""}${rep.avg} (range -100..100, ${rep.count} rater${rep.count === 1 ? "" : "s"})`
+    : "no ratings yet";
 
   return (
     <div className="flex flex-col gap-4">

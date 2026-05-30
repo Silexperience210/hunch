@@ -175,14 +175,20 @@ export function parseAttestationEvent(ev: NostrEvent): OracleAttestation | null 
   return { market, outcome, signature: signature.toLowerCase() };
 }
 
+/** HIP-5 reputation scopes (mirrors `ReputationScope`). */
+export const REPUTATION_SCOPES = ["oracle", "mint", "market_creator", "bettor"] as const;
+export type ReputationScope = (typeof REPUTATION_SCOPES)[number];
+
 export interface Reputation {
   /** The author of the claim (event pubkey). */
   rater: string;
-  /** The rated oracle's x-only pubkey (the `d` tag). */
-  subject: string;
-  /** Score in [0, 100]. */
-  rating: number;
-  /** Optional market this claim references. */
+  /** The rated pubkey — the `p` tag (x-only hex, 32 bytes). */
+  target: string;
+  /** What is being rated. */
+  scope: ReputationScope;
+  /** Score in [-100, +100] (HIP-5 §Score Semantics). */
+  score: number;
+  /** Optional market this claim is scoped to. */
   market?: string;
   /** Free-form justification (content). */
   note: string;
@@ -193,16 +199,19 @@ export interface Reputation {
 /** Parses a kind:30891 HIP-5 reputation claim, or null if malformed (mirrors `Reputation::from_event`). */
 export function parseReputationEvent(ev: NostrEvent): Reputation | null {
   if (ev.kind !== KIND_REPUTATION) return null;
-  const subject = tagValue(ev.tags, "d");
-  const ratingRaw = tagValue(ev.tags, "rating");
-  if (!subject || ratingRaw == null) return null;
-  if (!/^[0-9a-f]{64}$/i.test(subject)) return null;
-  const rating = Number(ratingRaw);
-  if (!Number.isInteger(rating) || rating < 0 || rating > 100) return null;
+  const target = tagValue(ev.tags, "p");
+  const scope = tagValue(ev.tags, "scope");
+  const scoreRaw = tagValue(ev.tags, "score");
+  if (!target || !scope || scoreRaw == null) return null;
+  if (!/^[0-9a-f]{64}$/i.test(target)) return null;
+  if (!(REPUTATION_SCOPES as readonly string[]).includes(scope)) return null;
+  const score = Number(scoreRaw);
+  if (!Number.isInteger(score) || score < -100 || score > 100) return null;
   return {
     rater: ev.pubkey,
-    subject: subject.toLowerCase(),
-    rating,
+    target: target.toLowerCase(),
+    scope: scope as ReputationScope,
+    score,
     market: tagValue(ev.tags, "market"),
     note: ev.content,
     createdAt: ev.created_at,
@@ -210,13 +219,13 @@ export function parseReputationEvent(ev: NostrEvent): Reputation | null {
 }
 
 export interface ReputationSummary {
-  /** Rounded mean rating across distinct raters. */
+  /** Rounded mean score in [-100, +100] across distinct raters. */
   avg: number;
   /** Number of distinct raters. */
   count: number;
 }
 
-/** Aggregates claims into a mean + rater count, keeping the newest claim per rater. */
+/** Aggregates claims into a mean score + rater count, keeping the newest claim per rater. */
 export function aggregateReputation(reps: Reputation[]): ReputationSummary | null {
   const byRater = new Map<string, Reputation>();
   for (const r of reps) {
@@ -224,7 +233,7 @@ export function aggregateReputation(reps: Reputation[]): ReputationSummary | nul
     if (!prev || r.createdAt > prev.createdAt) byRater.set(r.rater, r);
   }
   if (byRater.size === 0) return null;
-  const vals = [...byRater.values()].map((r) => r.rating);
+  const vals = [...byRater.values()].map((r) => r.score);
   return { avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length), count: byRater.size };
 }
 
