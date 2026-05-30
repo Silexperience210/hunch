@@ -133,6 +133,46 @@ export function parseOrderEvent(ev: NostrEvent): Order | null {
   };
 }
 
+export interface OracleAnnounce {
+  /** The market id the oracle commits to attest. */
+  market: string;
+  /** The oracle's announced public nonce R (x-only hex, 32 bytes). */
+  nonce: string;
+  /** Human-readable resolution note. */
+  body: string;
+}
+
+/** Parses a kind:88 NIP-88 announce, or returns null if malformed (mirrors `OracleAnnounce::from_event`). */
+export function parseAnnounceEvent(ev: NostrEvent): OracleAnnounce | null {
+  if (ev.kind !== KIND_ORACLE_ANNOUNCE) return null;
+  const market = tagValue(ev.tags, "market");
+  const nonce = tagValue(ev.tags, "nonce");
+  if (!market || !nonce) return null;
+  if (!/^[0-9a-f]{64}$/i.test(nonce)) return null; // 32-byte hex
+  return { market, nonce: nonce.toLowerCase(), body: ev.content };
+}
+
+export interface OracleAttestation {
+  /** The market id this attestation resolves. */
+  market: string;
+  /** The attested outcome (YES / NO / INVALID). */
+  outcome: string;
+  /** The DLC attestation signature (BIP-340 with the pre-committed nonce), 64-byte hex. */
+  signature: string;
+}
+
+/** Parses a kind:89 NIP-88 attestation, or returns null if malformed (mirrors `OracleAttestation::from_event`). */
+export function parseAttestationEvent(ev: NostrEvent): OracleAttestation | null {
+  if (ev.kind !== KIND_ORACLE_ATTESTATION) return null;
+  const market = tagValue(ev.tags, "market");
+  const outcome = tagValue(ev.tags, "outcome");
+  if (!market || !outcome) return null;
+  if (!(OUTCOMES as readonly string[]).includes(outcome)) return null;
+  const signature = ev.content.trim();
+  if (!/^[0-9a-f]{128}$/i.test(signature)) return null; // 64-byte hex
+  return { market, outcome, signature: signature.toLowerCase() };
+}
+
 /**
  * NIP-01 event id: sha256 of the canonical serialization
  * `[0, pubkey, created_at, kind, tags, content]`.

@@ -6,6 +6,8 @@ import Link from "next/link";
 import type { Wallet } from "@cashu/cashu-ts";
 import { compressedPubkey, outcomeLockKey, outcomeUnlockSecret, randomBettorSecret } from "@/lib/dlc";
 import { connect, depositQuote, mintLocked, payWithWebln, redeem, waitPaid } from "@/lib/wallet";
+import { fetchAnnounce, fetchAttestation } from "@/lib/oracle";
+import { DEFAULT_RELAYS } from "@/lib/relay";
 
 const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
 const REFUND_LOCKTIME = Math.floor(Date.now() / 1000) + 90 * 24 * 3600; // 90 days
@@ -16,6 +18,7 @@ function BetView() {
   const [market, setMarket] = useState(params.get("id") ?? "");
   const [oracle, setOracle] = useState(params.get("oracle") ?? "");
   const [nonce, setNonce] = useState("");
+  const [relays, setRelays] = useState(DEFAULT_RELAYS.join(", "));
   const [outcome, setOutcome] = useState<"YES" | "NO">("YES");
   const [amount, setAmount] = useState("100");
   const [secret, setSecret] = useState("");
@@ -43,6 +46,33 @@ function BetView() {
   }
 
   const bettorPub = secret ? safe(() => compressedPubkey(secret)) : "";
+
+  function relayList(): string[] {
+    return relays.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+
+  async function fetchNonce() {
+    await guard(async () => {
+      if (!oracle.trim() || !market.trim()) throw new Error("Set the oracle pubkey and market id first.");
+      log("Fetching the oracle announce (kind:88) from relays…");
+      const a = await fetchAnnounce(relayList(), oracle.trim(), market.trim());
+      if (!a) throw new Error("No verified announce found for this oracle + market.");
+      setNonce(a.nonce);
+      log(`✔ Nonce R = ${a.nonce.slice(0, 16)}… loaded from the oracle announce.`);
+    });
+  }
+
+  async function fetchAtt() {
+    await guard(async () => {
+      if (!oracle.trim() || !market.trim()) throw new Error("Set the oracle pubkey and market id first.");
+      log("Fetching the oracle attestation (kind:89) from relays…");
+      const a = await fetchAttestation(relayList(), oracle.trim(), market.trim());
+      if (!a) throw new Error("No verified attestation found yet — the market may be unresolved.");
+      setAttestationSig(a.signature);
+      if (a.outcome === "YES" || a.outcome === "NO") setOutcome(a.outcome);
+      log(`✔ Settlement: oracle attested ${a.outcome}. Signature loaded — redeem if it matches your position.`);
+    });
+  }
 
   async function deposit() {
     await guard(async () => {
@@ -111,7 +141,13 @@ function BetView() {
       <input style={field} className="px-3 py-2 text-sm rounded" placeholder="mint url" value={mintUrl} onChange={(e) => setMintUrl(e.target.value)} />
       <input style={field} className="px-3 py-2 text-sm rounded" placeholder="market id (creator:30888:slug)" value={market} onChange={(e) => setMarket(e.target.value)} />
       <input style={field} className="px-3 py-2 text-sm rounded" placeholder="oracle pubkey (x-only hex)" value={oracle} onChange={(e) => setOracle(e.target.value)} />
-      <input style={field} className="px-3 py-2 text-sm rounded" placeholder="oracle nonce R (x-only hex, from the kind:88 announce)" value={nonce} onChange={(e) => setNonce(e.target.value)} />
+      <input style={field} className="px-3 py-2 text-sm rounded" placeholder="relays (comma-separated)" value={relays} onChange={(e) => setRelays(e.target.value)} />
+      <div className="flex gap-2">
+        <input style={field} className="px-3 py-2 text-sm rounded flex-1" placeholder="oracle nonce R (x-only hex, from the kind:88 announce)" value={nonce} onChange={(e) => setNonce(e.target.value)} />
+        <button onClick={fetchNonce} disabled={busy} className="px-3 py-2 text-sm rounded whitespace-nowrap" style={field}>
+          fetch
+        </button>
+      </div>
       <div className="flex gap-2">
         <select style={field} className="px-2 py-2 text-sm rounded" value={outcome} onChange={(e) => setOutcome(e.target.value as "YES" | "NO")}>
           <option value="YES">YES</option>
@@ -137,7 +173,12 @@ function BetView() {
 
       <section className="flex flex-col gap-2" style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
         <div className="font-bold text-sm">Redeem after settlement</div>
-        <input style={field} className="px-3 py-2 text-sm rounded" placeholder="oracle attestation signature (kind:89 sig hex)" value={attestationSig} onChange={(e) => setAttestationSig(e.target.value)} />
+        <div className="flex gap-2">
+          <input style={field} className="px-3 py-2 text-sm rounded flex-1" placeholder="oracle attestation signature (kind:89 sig hex)" value={attestationSig} onChange={(e) => setAttestationSig(e.target.value)} />
+          <button onClick={fetchAtt} disabled={busy} className="px-3 py-2 text-sm rounded whitespace-nowrap" style={field}>
+            fetch
+          </button>
+        </div>
         <button onClick={doRedeem} disabled={busy} className="self-start px-4 py-2 text-sm rounded font-bold" style={{ background: "var(--accent)", color: "#000" }}>
           Redeem
         </button>
