@@ -1,7 +1,7 @@
 // Event templates for the write path (mirrors hunch-cli's build_market / order_tags_with_d).
 // Pure tag/content assembly — offline-testable. Signing happens via NIP-07 in `sign.ts`.
 
-import { KIND_MARKET, KIND_ORDER, OUTCOMES } from "./hunch.ts";
+import { KIND_MARKET, KIND_ORDER, KIND_REPUTATION, OUTCOMES } from "./hunch.ts";
 
 const SEVEN_DAYS = 7 * 24 * 3600;
 

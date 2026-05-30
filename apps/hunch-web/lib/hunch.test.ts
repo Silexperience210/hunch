@@ -9,9 +9,12 @@ import {
   parseOrderEvent,
   parseAnnounceEvent,
   parseAttestationEvent,
+  parseReputationEvent,
+  aggregateReputation,
   computeEventId,
   canonicalSerialization,
   type NostrEvent,
+  type Reputation,
 } from "./hunch.ts";
 
 function marketEvent(): NostrEvent {
@@ -172,4 +175,50 @@ test("parseAttestationEvent rejects unknown outcome and bad signature length", (
   const badSig = attestationEvent();
   badSig.tags = [["market", "m"], ["outcome", "YES"], ["sig", "deadbeef"]];
   assert.strictEqual(parseAttestationEvent(badSig), null);
+});
+
+function reputationEvent(rater: string, rating: string, createdAt = 1_700_000_000): NostrEvent {
+  return {
+    id: "00".repeat(32),
+    pubkey: rater,
+    created_at: createdAt,
+    kind: 30891,
+    tags: [
+      ["d", "aa".repeat(32)],
+      ["rating", rating],
+    ],
+    content: "honest settlement history",
+    sig: "00".repeat(64),
+  };
+}
+
+test("parseReputationEvent extracts rater, subject, rating", () => {
+  const r = parseReputationEvent(reputationEvent("bb".repeat(32), "80"));
+  assert.ok(r);
+  assert.strictEqual(r!.rater, "bb".repeat(32));
+  assert.strictEqual(r!.subject, "aa".repeat(32));
+  assert.strictEqual(r!.rating, 80);
+});
+
+test("parseReputationEvent rejects out-of-range or non-integer ratings", () => {
+  assert.strictEqual(parseReputationEvent(reputationEvent("bb".repeat(32), "101")), null);
+  assert.strictEqual(parseReputationEvent(reputationEvent("bb".repeat(32), "-1")), null);
+  assert.strictEqual(parseReputationEvent(reputationEvent("bb".repeat(32), "x")), null);
+});
+
+test("aggregateReputation averages distinct raters, newest claim per rater", () => {
+  const reps = [
+    parseReputationEvent(reputationEvent("11".repeat(32), "60", 100)),
+    parseReputationEvent(reputationEvent("22".repeat(32), "100", 100)),
+    // same rater re-rates later — newest (80) wins over 60
+    parseReputationEvent(reputationEvent("11".repeat(32), "80", 200)),
+  ].filter((r): r is Reputation => r !== null);
+  const summary = aggregateReputation(reps);
+  assert.ok(summary);
+  assert.strictEqual(summary!.count, 2);
+  assert.strictEqual(summary!.avg, 90); // (80 + 100) / 2
+});
+
+test("aggregateReputation returns null for no claims", () => {
+  assert.strictEqual(aggregateReputation([]), null);
 });

@@ -8,6 +8,7 @@ export const KIND_MARKET = 30888;
 export const KIND_ORDER = 38888;
 export const KIND_ORACLE_ANNOUNCE = 88;
 export const KIND_ORACLE_ATTESTATION = 89;
+export const KIND_REPUTATION = 30891;
 
 /** The HIP-2 canonical outcomes, in order. */
 export const OUTCOMES = ["YES", "NO", "INVALID"] as const;
@@ -172,6 +173,59 @@ export function parseAttestationEvent(ev: NostrEvent): OracleAttestation | null 
   if (!(OUTCOMES as readonly string[]).includes(outcome)) return null;
   if (!/^[0-9a-f]{128}$/i.test(signature)) return null; // 64-byte hex
   return { market, outcome, signature: signature.toLowerCase() };
+}
+
+export interface Reputation {
+  /** The author of the claim (event pubkey). */
+  rater: string;
+  /** The rated oracle's x-only pubkey (the `d` tag). */
+  subject: string;
+  /** Score in [0, 100]. */
+  rating: number;
+  /** Optional market this claim references. */
+  market?: string;
+  /** Free-form justification (content). */
+  note: string;
+  /** When the claim was signed (for newest-per-rater dedup). */
+  createdAt: number;
+}
+
+/** Parses a kind:30891 HIP-5 reputation claim, or null if malformed (mirrors `Reputation::from_event`). */
+export function parseReputationEvent(ev: NostrEvent): Reputation | null {
+  if (ev.kind !== KIND_REPUTATION) return null;
+  const subject = tagValue(ev.tags, "d");
+  const ratingRaw = tagValue(ev.tags, "rating");
+  if (!subject || ratingRaw == null) return null;
+  if (!/^[0-9a-f]{64}$/i.test(subject)) return null;
+  const rating = Number(ratingRaw);
+  if (!Number.isInteger(rating) || rating < 0 || rating > 100) return null;
+  return {
+    rater: ev.pubkey,
+    subject: subject.toLowerCase(),
+    rating,
+    market: tagValue(ev.tags, "market"),
+    note: ev.content,
+    createdAt: ev.created_at,
+  };
+}
+
+export interface ReputationSummary {
+  /** Rounded mean rating across distinct raters. */
+  avg: number;
+  /** Number of distinct raters. */
+  count: number;
+}
+
+/** Aggregates claims into a mean + rater count, keeping the newest claim per rater. */
+export function aggregateReputation(reps: Reputation[]): ReputationSummary | null {
+  const byRater = new Map<string, Reputation>();
+  for (const r of reps) {
+    const prev = byRater.get(r.rater);
+    if (!prev || r.createdAt > prev.createdAt) byRater.set(r.rater, r);
+  }
+  if (byRater.size === 0) return null;
+  const vals = [...byRater.values()].map((r) => r.rating);
+  return { avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length), count: byRater.size };
 }
 
 /**

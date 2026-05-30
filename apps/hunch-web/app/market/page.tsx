@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
+  aggregateReputation,
   KIND_MARKET,
   KIND_ORDER,
   parseMarketEvent,
@@ -12,11 +13,12 @@ import {
   type OracleAnnounce,
   type OracleAttestation,
   type Order,
+  type ReputationSummary,
 } from "@/lib/hunch";
 import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
 import { DEFAULT_RELAYS, queryRelays } from "@/lib/relay";
-import { fetchAnnounce, fetchAttestation } from "@/lib/oracle";
-import { buildOrderTemplate } from "@/lib/build";
+import { fetchAnnounce, fetchAttestation, fetchReputation } from "@/lib/oracle";
+import { buildOrderTemplate, buildReputationTemplate } from "@/lib/build";
 import { signTemplate } from "@/lib/sign";
 import { publishAll } from "@/lib/publish";
 import { verifyEvent } from "@/lib/verify";
@@ -135,11 +137,57 @@ function SettlementBanner({ s }: { s: OracleAttestation }) {
   );
 }
 
-/** Market metadata + oracle status + settlement, fetched from the kind:30888 / 88 / 89 events. */
+/** Lets the signed-in user rate an oracle (HIP-5 kind 30891), then refreshes the summary. */
+function RateOracleForm({ oracle, market, onRated }: { oracle: string; market: string; onRated: () => void }) {
+  const [rating, setRating] = useState("80");
+  const [note, setNote] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
+
+  async function submit() {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const n = Number(rating);
+      if (!Number.isInteger(n) || n < 0 || n > 100) throw new Error("rating must be an integer 0-100");
+      const template = buildReputationTemplate({ subject: oracle, rating: n, market, note: note.trim() });
+      const signed = await signTemplate(template);
+      const results = await publishAll(DEFAULT_RELAYS, signed);
+      const ok = results.filter((r) => r.accepted).length;
+      setStatus(`Published to ${ok}/${results.length} relays.`);
+      onRated();
+    } catch (e) {
+      setStatus("Error: " + (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex gap-2 flex-wrap items-center text-sm">
+      <input style={field} className="px-2 py-1 rounded w-20" value={rating} onChange={(e) => setRating(e.target.value)} placeholder="0-100" />
+      <input style={field} className="px-2 py-1 rounded flex-1 min-w-[160px]" value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
+      <button onClick={submit} disabled={busy} className="px-3 py-1 rounded" style={field}>
+        {busy ? "Signing…" : "Rate oracle"}
+      </button>
+      {status && <span style={{ color: "var(--muted)" }} className="text-xs w-full">{status}</span>}
+    </div>
+  );
+}
+
+/** Market metadata + oracle status/reputation + settlement, from the kind:30888 / 88 / 89 / 30891 events. */
 function MarketMeta({ id }: { id: string }) {
   const [market, setMarket] = useState<Market | null>(null);
   const [announce, setAnnounce] = useState<OracleAnnounce | null>(null);
   const [settlement, setSettlement] = useState<OracleAttestation | null>(null);
+  const [rep, setRep] = useState<ReputationSummary | null>(null);
+
+  // Reputation can be refreshed independently (after the user rates the oracle).
+  const loadRep = useCallback(async (oracle: string) => {
+    const claims = await fetchReputation(DEFAULT_RELAYS, oracle);
+    setRep(aggregateReputation(claims));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,6 +203,7 @@ function MarketMeta({ id }: { id: string }) {
       const [a, s] = await Promise.all([
         fetchAnnounce(DEFAULT_RELAYS, m.oracle, m.id),
         fetchAttestation(DEFAULT_RELAYS, m.oracle, m.id),
+        loadRep(m.oracle),
       ]);
       if (!cancelled) {
         setAnnounce(a);
@@ -164,9 +213,11 @@ function MarketMeta({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, loadRep]);
 
   if (!market) return null;
+
+  const repText = rep ? `${rep.avg}/100 (${rep.count} rater${rep.count === 1 ? "" : "s"})` : "no ratings yet";
 
   return (
     <div className="flex flex-col gap-4">
@@ -174,12 +225,14 @@ function MarketMeta({ id }: { id: string }) {
       {settlement && <SettlementBanner s={settlement} />}
       <section className="flex flex-col gap-1 text-sm">
         <Row label="oracle" value={market.oracle} />
+        <Row label="reputation" value={repText} />
         <Row label="mint" value={market.mint} />
         <Row label="dlc_contract" value={market.dlcContract} />
         <Row label="expiry" value={new Date(market.expiry * 1000).toISOString()} />
         <Row label="resolution" value={market.content.resolution_criteria || "—"} />
         <Row label="oracle nonce" value={announce ? `committed (${announce.nonce.slice(0, 16)}…)` : "not announced yet"} />
       </section>
+      <RateOracleForm oracle={market.oracle} market={market.id} onRated={() => loadRep(market.oracle)} />
       <Link
         href={betHref(market, announce)}
         className="self-start text-sm px-4 py-2 rounded font-bold"
