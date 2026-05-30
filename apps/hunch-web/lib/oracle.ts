@@ -5,8 +5,8 @@
 // index — and match the market tag client-side. Every event is Schnorr-verified before use
 // (relays are untrusted); the newest valid match wins.
 
-import { queryRelays, type RelayFilter } from "./relay.js";
-import { verifyEvent } from "./verify.js";
+import { queryRelays, type RelayFilter } from "./relay.ts";
+import { verifyEvent } from "./verify.ts";
 import {
   KIND_ORACLE_ANNOUNCE,
   KIND_ORACLE_ATTESTATION,
@@ -15,7 +15,7 @@ import {
   type NostrEvent,
   type OracleAnnounce,
   type OracleAttestation,
-} from "./hunch.js";
+} from "./hunch.ts";
 
 /** Picks the verified, market-matching, parseable event with the greatest created_at. */
 function newestMatch<T>(

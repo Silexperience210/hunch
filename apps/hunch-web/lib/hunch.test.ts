@@ -7,6 +7,8 @@ import {
   marketId,
   parseMarketEvent,
   parseOrderEvent,
+  parseAnnounceEvent,
+  parseAttestationEvent,
   computeEventId,
   canonicalSerialization,
   type NostrEvent,
@@ -109,4 +111,62 @@ test("canonical serialization has no insignificant whitespace", () => {
   const s = canonicalSerialization(marketEvent());
   assert.ok(!s.startsWith("[ "));
   assert.ok(!s.includes(", ")); // compact form, like serde_json in hunch-nostr
+});
+
+function announceEvent(): NostrEvent {
+  return {
+    id: "00".repeat(32),
+    pubkey: "aa".repeat(32),
+    created_at: 1_700_000_000,
+    kind: 88,
+    tags: [
+      ["market", `${"cc".repeat(32)}:30888:btc-100k-eoy-2026`],
+      ["nonce", "ab".repeat(32)],
+    ],
+    content: "Resolves on the Coinbase BTC-USD feed.",
+    sig: "00".repeat(64),
+  };
+}
+
+function attestationEvent(): NostrEvent {
+  return {
+    id: "00".repeat(32),
+    pubkey: "aa".repeat(32),
+    created_at: 1_700_000_000,
+    kind: 89,
+    tags: [
+      ["market", `${"cc".repeat(32)}:30888:btc-100k-eoy-2026`],
+      ["outcome", "YES"],
+    ],
+    content: "cd".repeat(64),
+    sig: "00".repeat(64),
+  };
+}
+
+test("parseAnnounceEvent extracts the nonce R", () => {
+  const a = parseAnnounceEvent(announceEvent());
+  assert.ok(a);
+  assert.strictEqual(a!.nonce, "ab".repeat(32));
+  assert.strictEqual(a!.market, `${"cc".repeat(32)}:30888:btc-100k-eoy-2026`);
+});
+
+test("parseAnnounceEvent rejects wrong kind and bad nonce length", () => {
+  assert.strictEqual(parseAnnounceEvent({ ...announceEvent(), kind: 1 }), null);
+  const bad = announceEvent();
+  bad.tags = [["market", "m"], ["nonce", "abcd"]];
+  assert.strictEqual(parseAnnounceEvent(bad), null);
+});
+
+test("parseAttestationEvent extracts the 64-byte signature and outcome", () => {
+  const a = parseAttestationEvent(attestationEvent());
+  assert.ok(a);
+  assert.strictEqual(a!.outcome, "YES");
+  assert.strictEqual(a!.signature.length, 128);
+});
+
+test("parseAttestationEvent rejects unknown outcome and bad signature length", () => {
+  const badOutcome = attestationEvent();
+  badOutcome.tags = [["market", "m"], ["outcome", "MAYBE"]];
+  assert.strictEqual(parseAttestationEvent(badOutcome), null);
+  assert.strictEqual(parseAttestationEvent({ ...attestationEvent(), content: "deadbeef" }), null);
 });
