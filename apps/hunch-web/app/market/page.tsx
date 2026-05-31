@@ -18,7 +18,7 @@ import {
   type ReputationSummary,
 } from "@/lib/hunch";
 import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
-import { DEFAULT_RELAYS, queryRelays } from "@/lib/relay";
+import { relaysFromUrl, queryRelays } from "@/lib/relay";
 import { fetchAnnounce, fetchAttestation, fetchReputation } from "@/lib/oracle";
 import { fetchMintAnnounce } from "@/lib/mint";
 import { fetchDisputes } from "@/lib/disputes";
@@ -75,7 +75,7 @@ function OrderForm({ market, onPosted }: { market: string; onPosted: () => void 
         expires: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
       });
       const signed = await signTemplate(template);
-      const results = await publishAll(DEFAULT_RELAYS, signed);
+      const results = await publishAll(relaysFromUrl(), signed);
       const ok = results.filter((r) => r.accepted).length;
       setStatus(`Published to ${ok}/${results.length} relays.`);
       onPosted();
@@ -157,7 +157,7 @@ function RateOracleForm({ oracle, market, onRated }: { oracle: string; market: s
       if (!Number.isInteger(n) || n < -100 || n > 100) throw new Error("score must be an integer -100..100");
       const template = buildReputationTemplate({ subject: oracle, scope: "oracle", score: n, market, note: note.trim() });
       const signed = await signTemplate(template);
-      const results = await publishAll(DEFAULT_RELAYS, signed);
+      const results = await publishAll(relaysFromUrl(), signed);
       const ok = results.filter((r) => r.accepted).length;
       setStatus(`Published to ${ok}/${results.length} relays.`);
       onRated();
@@ -190,7 +190,7 @@ function MarketMeta({ id }: { id: string }) {
 
   // Reputation can be refreshed independently (after the user rates the oracle).
   const loadRep = useCallback(async (oracle: string) => {
-    const claims = await fetchReputation(DEFAULT_RELAYS, oracle);
+    const claims = await fetchReputation(relaysFromUrl(), oracle);
     setRep(aggregateReputation(claims));
   }, []);
 
@@ -201,15 +201,15 @@ function MarketMeta({ id }: { id: string }) {
       const [creator, , ...rest] = id.split(":");
       const d = rest.join(":");
       if (!creator || !d) return;
-      const events = await queryRelays(DEFAULT_RELAYS, { kinds: [KIND_MARKET], authors: [creator], "#d": [d], limit: 5 });
+      const events = await queryRelays(relaysFromUrl(), { kinds: [KIND_MARKET], authors: [creator], "#d": [d], limit: 5 });
       const m = events.filter(verifyEvent).map(parseMarketEvent).find((x): x is Market => x !== null && x.id === id);
       if (cancelled || !m) return;
       setMarket(m);
       const [a, s, , mint] = await Promise.all([
-        fetchAnnounce(DEFAULT_RELAYS, m.oracle, m.id),
-        fetchAttestation(DEFAULT_RELAYS, m.oracle, m.id),
+        fetchAnnounce(relaysFromUrl(), m.oracle, m.id),
+        fetchAttestation(relaysFromUrl(), m.oracle, m.id),
         loadRep(m.oracle),
-        fetchMintAnnounce(DEFAULT_RELAYS, m.mint),
+        fetchMintAnnounce(relaysFromUrl(), m.mint),
       ]);
       if (!cancelled) {
         setAnnounce(a);
@@ -287,7 +287,7 @@ function Disputes({ market, attestationId }: { market: string; attestationId?: s
   const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
 
   const load = useCallback(async () => {
-    setDisputes(await fetchDisputes(DEFAULT_RELAYS, market));
+    setDisputes(await fetchDisputes(relaysFromUrl(), market));
   }, [market]);
 
   useEffect(() => {
@@ -306,7 +306,7 @@ function Disputes({ market, attestationId }: { market: string; attestationId?: s
         evidence: evidence.trim() || undefined,
       });
       const signed = await signTemplate(template);
-      const results = await publishAll(DEFAULT_RELAYS, signed);
+      const results = await publishAll(relaysFromUrl(), signed);
       const ok = results.filter((r) => r.accepted).length;
       setStatus(`Published to ${ok}/${results.length} relays.`);
       load();
@@ -382,7 +382,7 @@ function MarketView() {
     setError(null);
     try {
       // Orders carry a single-letter `d` tag == market, so relays can filter by #d.
-      const events = await queryRelays(DEFAULT_RELAYS, { kinds: [KIND_ORDER], "#d": [id], limit: 500 });
+      const events = await queryRelays(relaysFromUrl(), { kinds: [KIND_ORDER], "#d": [id], limit: 500 });
       const orders = events
         .filter(verifyEvent) // untrusted relays — only verified orders enter the book
         .map(parseOrderEvent)

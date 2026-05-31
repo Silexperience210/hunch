@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { parseMarketEvent, type Market, KIND_MARKET } from "@/lib/hunch";
-import { queryRelays, DEFAULT_RELAYS } from "@/lib/relay";
+import { queryRelays, relaysFromUrl } from "@/lib/relay";
 import { verifyEvent } from "@/lib/verify";
 
 type StateFilter = "all" | "open" | "expired";
@@ -11,7 +11,7 @@ type StateFilter = "all" | "open" | "expired";
 export default function HomePage() {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [status, setStatus] = useState<string>("Loading…");
-  const [relays] = useState<string[]>(DEFAULT_RELAYS);
+  const [relays] = useState<string[]>(relaysFromUrl);
 
   const [q, setQ] = useState("");
   const [topic, setTopic] = useState("");

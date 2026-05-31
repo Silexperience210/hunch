@@ -70,3 +70,15 @@ export async function queryRelays(urls: string[], filter: RelayFilter, timeoutMs
 
 /** Default public relays (override in the UI). Hunch is multi-relay by design (CLAUDE.md). */
 export const DEFAULT_RELAYS = ["wss://nos.lol", "wss://relay.damus.io"];
+
+/**
+ * Relays to use for reads: the `?relays=` query param (comma-separated wss URLs) if present,
+ * else DEFAULT_RELAYS. Lets a deployed static site point at a self-hosted relay with no rebuild.
+ */
+export function relaysFromUrl(): string[] {
+  if (typeof window === "undefined") return DEFAULT_RELAYS;
+  const raw = new URLSearchParams(window.location.search).get("relays");
+  if (!raw) return DEFAULT_RELAYS;
+  const list = raw.split(",").map((s) => s.trim()).filter((s) => s.startsWith("ws"));
+  return list.length ? list : DEFAULT_RELAYS;
+}
