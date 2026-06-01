@@ -5,6 +5,7 @@
 //! (publish only) and the CLI (publish markets / list markets).
 
 use std::collections::BTreeMap;
+use std::sync::Once;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -12,6 +13,17 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
+
+/// rustls 0.23 requires a process-wide `CryptoProvider` before any TLS (wss://) handshake, or it
+/// panics ("Could not automatically determine the process-level CryptoProvider"). Install the
+/// aws-lc-rs default once, lazily, on the first connect. ws:// (no TLS) doesn't need it, but
+/// installing unconditionally is harmless and keeps wss:// publishing working.
+fn ensure_crypto_provider() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
+}
 
 /// Result of publishing one event to one relay.
 #[derive(Debug, Clone)]
@@ -29,6 +41,7 @@ pub async fn publish(relay: &str, event: &Value, wait: Duration) -> Result<Publi
         .context("event missing id")?
         .to_string();
 
+    ensure_crypto_provider();
     let (mut ws, _resp) = tokio_tungstenite::connect_async(relay)
         .await
         .with_context(|| format!("connecting to relay {relay}"))?;
@@ -99,6 +112,7 @@ pub async fn publish_all(
 /// or `wait` elapses, then sends `["CLOSE", sub]`. The timeout is a soft stop: relays that
 /// never send EOSE still return whatever arrived before `wait`.
 pub async fn query(relay: &str, filter: Value, wait: Duration) -> Result<Vec<Value>> {
+    ensure_crypto_provider();
     let (mut ws, _resp) = tokio_tungstenite::connect_async(relay)
         .await
         .with_context(|| format!("connecting to relay {relay}"))?;

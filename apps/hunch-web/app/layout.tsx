@@ -15,15 +15,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           style={{ borderBottom: "1px solid var(--border)" }}
           className="px-6 py-4 flex items-baseline gap-3"
         >
-          <span style={{ color: "var(--accent)" }} className="text-xl font-bold">
+          <Link href="/" style={{ color: "var(--accent)" }} className="text-xl font-bold">
             Hunch
-          </span>
-          <span style={{ color: "var(--muted)" }} className="text-xs">
+          </Link>
+          <span style={{ color: "var(--muted)" }} className="text-xs hidden sm:inline">
             prediction markets on Bitcoin · trust the math
           </span>
-          <Link href="/create/" className="text-xs ml-auto">
-            + create market
-          </Link>
+          <nav className="ml-auto flex items-baseline gap-4 text-xs">
+            <Link href="/">markets</Link>
+            <Link href="/create/">+ create</Link>
+          </nav>
         </header>
         <main className="px-6 py-6 max-w-4xl mx-auto">{children}</main>
         <footer style={{ color: "var(--muted)" }} className="px-6 py-8 text-xs max-w-4xl mx-auto">

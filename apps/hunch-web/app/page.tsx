@@ -98,9 +98,20 @@ export default function HomePage() {
       </div>
 
       {status && (
-        <p style={{ color: "var(--muted)" }} className="text-sm">
-          {status}
-        </p>
+        <div className="flex flex-col gap-2">
+          <p style={{ color: "var(--muted)" }} className="text-sm">
+            {status}
+          </p>
+          {status === "No markets found yet." && (
+            <Link
+              href="/create/"
+              className="self-start px-4 py-2 text-sm rounded font-bold"
+              style={{ background: "var(--accent)", color: "#000" }}
+            >
+              Create the first market →
+            </Link>
+          )}
+        </div>
       )}
       {!status && filtered.length === 0 && (
         <p style={{ color: "var(--muted)" }} className="text-sm">
