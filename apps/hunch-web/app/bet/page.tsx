@@ -226,6 +226,10 @@ function BetView() {
           oracle attests your outcome (reclaimable after the refund timeout). No custody — your wallet
           key stays in this browser.
         </p>
+        <div className="flex gap-2 items-center text-xs" style={{ color: "var(--muted)" }}>
+          <span className="break-all">{bettorPub ? `wallet ${bettorPub.slice(0, 16)}…` : "creating wallet…"}</span>
+          <Link href="/wallet/" style={{ color: "var(--accent)" }}>view wallet →</Link>
+        </div>
       </div>
 
       {/* 1 · pick a side + stake */}

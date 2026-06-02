@@ -21,9 +21,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <span style={{ color: "var(--muted)" }} className="text-xs hidden sm:inline">
             prediction markets on Bitcoin · trust the math
           </span>
-          <nav className="ml-auto flex items-baseline gap-4 text-xs">
-            <Link href="/">markets</Link>
-            <Link href="/create/">+ create</Link>
+          <nav className="ml-auto flex items-center gap-4 text-xs">
+            <Link href="/" style={{ color: "var(--fg)" }} className="hover:opacity-80">
+              markets
+            </Link>
+            <Link href="/wallet/" style={{ color: "var(--fg)" }} className="hover:opacity-80">
+              wallet
+            </Link>
+            <Link
+              href="/create/"
+              className="px-3 py-1.5 rounded font-bold"
+              style={{ background: "var(--accent)", color: "#000" }}
+            >
+              + create
+            </Link>
           </nav>
         </header>
         <main className="px-6 py-6 max-w-4xl mx-auto">{children}</main>
