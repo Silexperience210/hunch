@@ -326,6 +326,11 @@ async fn tick_once(
                 continue; // --market filter: only this one
             }
         }
+        // The daemon only owns markets it can auto-resolve; manually-resolved markets (no spec)
+        // are left untouched so it never clobbers a hand-managed announce/attestation.
+        if market.resolution_spec.is_none() {
+            continue;
+        }
 
         // 1) Announce early (idempotent) so bettors can lock to the committed nonce R.
         if !store.is_announced(&id) {
