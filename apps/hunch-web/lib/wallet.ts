@@ -53,3 +53,30 @@ export async function mintLocked(
 export async function redeem(wallet: Wallet, proofs: Proof[], spendPrivkey: string): Promise<Proof[]> {
   return wallet.receive(proofs, { privkey: spendPrivkey });
 }
+
+/** cashu-ts returns amounts as `Amount` objects ({ value: bigint }) in some responses; normalize. */
+function amountToNumber(a: unknown): number {
+  if (typeof a === "number") return a;
+  if (typeof a === "bigint") return Number(a);
+  const v = (a as { value?: unknown })?.value;
+  return typeof v === "bigint" ? Number(v) : Number(v ?? 0);
+}
+
+/** Mints `amount` sat of plain (unlocked) proofs after the quote is paid — a wallet top-up. */
+export async function mintPlain(wallet: Wallet, amount: number, quote: any): Promise<Proof[]> {
+  return wallet.mintProofs("bolt11", amount, quote);
+}
+
+/** Withdraw: melts `proofs` to pay a bolt11 `invoice`. Returns the change proofs (overpayment swapped
+ *  back) plus the amount and fee. Proven live in scripts/wallet-fns-e2e.ts. */
+export async function meltToInvoice(
+  wallet: Wallet,
+  proofs: Proof[],
+  invoice: string,
+): Promise<{ change: Proof[]; paid: number; fee: number; state?: string }> {
+  const quote = await wallet.createMeltQuoteBolt11(invoice);
+  const paid = amountToNumber((quote as { amount?: unknown }).amount);
+  const fee = amountToNumber((quote as { fee_reserve?: unknown }).fee_reserve);
+  const res: any = await wallet.meltProofsBolt11(quote, proofs);
+  return { change: res.change ?? [], paid, fee, state: res.quote?.state };
+}

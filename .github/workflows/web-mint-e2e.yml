@@ -61,6 +61,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           HUNCH_MINT_URL=http://127.0.0.1:8085 node --experimental-strip-types scripts/wallet-e2e.ts
+          HUNCH_MINT_URL=http://127.0.0.1:8085 node --experimental-strip-types scripts/wallet-fns-e2e.ts
 
       - name: Mint logs (on failure)
         if: failure()

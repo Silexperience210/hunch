@@ -197,8 +197,14 @@ function BetView() {
       const w = wallet.current ?? (await connect(mintUrl.trim()));
       const spend = outcomeUnlockSecret(secret, attestationSig.trim());
       const fresh = await redeem(w, JSON.parse(raw), spend);
-      const total = fresh.reduce((s: number, p: any) => s + p.amount, 0);
-      log(`✔ Redeemed ${total} sat — the outcome resolved ${outcome} and your tokens are unlocked.`, "ok");
+      const total = fresh.reduce((s: number, p: any) => s + Number(p.amount), 0);
+      // Move the unlocked proofs into the wallet balance (keyed by mint) so they survive reload and
+      // become withdrawable, and drop the spent locked position.
+      const balKey = `hunch:cashu:${mintUrl.trim()}`;
+      const prevBal = JSON.parse(localStorage.getItem(balKey) ?? "[]");
+      localStorage.setItem(balKey, JSON.stringify([...prevBal, ...fresh]));
+      localStorage.removeItem(proofsKey);
+      log(`✔ Redeemed ${total} sat into your wallet — withdraw it any time. The outcome resolved ${outcome}.`, "ok");
     });
   }
 

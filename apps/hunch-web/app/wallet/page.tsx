@@ -1,12 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import type { Proof, Wallet } from "@cashu/cashu-ts";
 import { compressedPubkey, randomBettorSecret } from "@/lib/dlc";
-import { Alert, Button, Card } from "@/components/ui";
+import { connect, depositQuote, meltToInvoice, mintPlain, waitPaid } from "@/lib/wallet";
+import { Alert, Button, Card, Input } from "@/components/ui";
 
 const SECRET_KEY = "hunch:wallet-secret";
+const MINT_KEY = "hunch:mint-url";
 const PROOFS_PREFIX = "hunch:proofs:";
+const DEFAULT_MINT = "https://mint-signet.21pay.org";
+
+const balanceKey = (mint: string) => `hunch:cashu:${mint}`;
+
+/** cashu-ts proof amounts can be number, string (HTTP JSON), bigint, or an Amount ({ value }). */
+function toNum(a: unknown): number {
+  if (typeof a === "number") return a;
+  if (typeof a === "string") return Number(a);
+  if (typeof a === "bigint") return Number(a);
+  const v = (a as { value?: unknown })?.value;
+  return typeof v === "bigint" ? Number(v) : Number(v ?? 0);
+}
+const sumSat = (proofs: { amount: unknown }[]) => proofs.reduce((s, p) => s + toNum(p.amount), 0);
 
 interface Position {
   market: string;
@@ -14,117 +30,241 @@ interface Position {
   sat: number;
   count: number;
 }
+type Status = { msg: string; kind: "info" | "ok" | "error" } | null;
 
-/** Reads the locally-stored Cashu wallet: the key + every minted outcome position. Everything lives
- *  in this browser's localStorage — no server, no custody (CLAUDE.md). */
-function readWallet(): { secret: string; pubkey: string; positions: Position[] } {
-  let secret = localStorage.getItem(SECRET_KEY) ?? "";
-  if (!secret) {
-    secret = randomBettorSecret();
-    localStorage.setItem(SECRET_KEY, secret);
-  }
-  let pubkey = "";
-  try {
-    pubkey = compressedPubkey(secret);
-  } catch {
-    /* malformed key */
-  }
-
-  const positions: Position[] = [];
+/** Locked outcome positions, scanned from localStorage (`hunch:proofs:<market>:<outcome>`). */
+function readPositions(): Position[] {
+  const out: Position[] = [];
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (!key || !key.startsWith(PROOFS_PREFIX)) continue;
-    const rest = key.slice(PROOFS_PREFIX.length); // `<market>:<outcome>`, market itself has colons
+    const rest = key.slice(PROOFS_PREFIX.length); // `<market>:<outcome>`; market itself has colons
     const cut = rest.lastIndexOf(":");
     if (cut < 0) continue;
-    const market = rest.slice(0, cut);
-    const outcome = rest.slice(cut + 1);
     try {
       const proofs = JSON.parse(localStorage.getItem(key) ?? "[]") as { amount: number }[];
-      const sat = proofs.reduce((s, p) => s + (p.amount || 0), 0);
-      if (proofs.length) positions.push({ market, outcome, sat, count: proofs.length });
+      if (proofs.length) out.push({ market: rest.slice(0, cut), outcome: rest.slice(cut + 1), sat: sumSat(proofs), count: proofs.length });
     } catch {
-      /* skip unreadable entry */
+      /* skip */
     }
   }
-  positions.sort((a, b) => b.sat - a.sat);
-  return { secret, pubkey, positions };
+  return out.sort((a, b) => b.sat - a.sat);
+}
+
+function loadBalance(mint: string): Proof[] {
+  try {
+    return JSON.parse(localStorage.getItem(balanceKey(mint)) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+function saveBalance(mint: string, proofs: Proof[]) {
+  localStorage.setItem(balanceKey(mint), JSON.stringify(proofs));
 }
 
 export default function WalletPage() {
-  const [pubkey, setPubkey] = useState("");
   const [secret, setSecret] = useState("");
+  const [pubkey, setPubkey] = useState("");
+  const [mint, setMint] = useState(DEFAULT_MINT);
+  const [balance, setBalance] = useState<Proof[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
-  const [status, setStatus] = useState<{ msg: string; kind: "info" | "ok" | "error" } | null>(null);
 
-  function refresh() {
-    const w = readWallet();
-    setSecret(w.secret);
-    setPubkey(w.pubkey);
-    setPositions(w.positions);
+  const [depositAmount, setDepositAmount] = useState("1000");
+  const [invoice, setInvoice] = useState("");
+  const [withdrawInvoice, setWithdrawInvoice] = useState("");
+  const [importKey, setImportKey] = useState("");
+
+  const [status, setStatus] = useState<Status>(null);
+  const [busy, setBusy] = useState(false);
+  const wallet = useRef<Wallet | null>(null);
+  const quote = useRef<any>(null);
+
+  function log(msg: string, kind: "info" | "ok" | "error" = "info") {
+    setStatus({ msg, kind });
+  }
+  async function guard(fn: () => Promise<void>) {
+    setBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      log("Error: " + (e as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
+  // Boot: load (or create) the key + mint, then read balances. Runs once.
   useEffect(() => {
-    refresh();
+    let s = localStorage.getItem(SECRET_KEY) ?? "";
+    if (!s) {
+      s = randomBettorSecret();
+      localStorage.setItem(SECRET_KEY, s);
+    }
+    const m = localStorage.getItem(MINT_KEY) || DEFAULT_MINT;
+    setSecret(s);
+    setMint(m);
   }, []);
 
-  const total = positions.reduce((s, p) => s + p.sat, 0);
+  // Re-derive pubkey + balances whenever the key or mint changes.
+  useEffect(() => {
+    if (!secret) return;
+    try {
+      setPubkey(compressedPubkey(secret));
+    } catch {
+      setPubkey("");
+    }
+  }, [secret]);
+  useEffect(() => {
+    if (!mint) return;
+    setBalance(loadBalance(mint));
+    setPositions(readPositions());
+  }, [mint]);
+
+  function persistMint(m: string) {
+    setMint(m);
+    localStorage.setItem(MINT_KEY, m);
+  }
 
   async function copy(text: string, label: string) {
     try {
       await navigator.clipboard.writeText(text);
-      setStatus({ msg: `✔ ${label} copied to clipboard.`, kind: "ok" });
+      log(`✔ ${label} copied.`, "ok");
     } catch {
-      setStatus({ msg: "Copy failed — select the text manually.", kind: "error" });
+      log("Copy failed — select the text manually.", "error");
     }
   }
 
-  function newKey() {
-    if (positions.length && !confirm("You still hold tokens under the current key. They stay redeemable only with the OLD key — back it up first. Generate a new key anyway?")) {
-      return;
-    }
+  function regenerateKey() {
+    if (positions.length && !confirm("You still hold outcome tokens under the current key — back up the backup key first, they stay redeemable only with it. Generate a new key anyway?")) return;
     const s = randomBettorSecret();
     localStorage.setItem(SECRET_KEY, s);
-    refresh();
-    setStatus({ msg: "New wallet key generated. Old tokens remain spendable only with the previous key.", kind: "info" });
+    setSecret(s);
+    log("New wallet key generated. Old tokens remain spendable only with the previous key.");
   }
+
+  function useImportedKey() {
+    const k = importKey.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(k)) {
+      log("Import a 64-char hex secret key.", "error");
+      return;
+    }
+    localStorage.setItem(SECRET_KEY, k);
+    setSecret(k);
+    setImportKey("");
+    log("✔ Imported your wallet key.", "ok");
+  }
+
+  async function startDeposit() {
+    await guard(async () => {
+      const amt = Number(depositAmount);
+      if (!Number.isFinite(amt) || amt <= 0) throw new Error("Enter a deposit amount in sat.");
+      const w = await connect(mint.trim());
+      wallet.current = w;
+      const { quote: q, invoice: inv } = await depositQuote(w, amt);
+      quote.current = q;
+      setInvoice(inv);
+      log("Pay the Lightning invoice, then “Check & claim”.");
+    });
+  }
+
+  async function claimDeposit() {
+    await guard(async () => {
+      const w = wallet.current;
+      if (!w || !quote.current) throw new Error("Start a deposit first.");
+      await waitPaid(w, quote.current);
+      const fresh = await mintPlain(w, Number(depositAmount), quote.current);
+      const next = [...loadBalance(mint), ...fresh];
+      saveBalance(mint, next);
+      setBalance(next);
+      setInvoice("");
+      quote.current = null;
+      log(`✔ Deposited ${sumSat(fresh)} sat. New balance ${sumSat(next)} sat.`, "ok");
+    });
+  }
+
+  async function withdraw() {
+    await guard(async () => {
+      const inv = withdrawInvoice.trim();
+      if (!inv.toLowerCase().startsWith("ln")) throw new Error("Paste a bolt11 Lightning invoice (lnbc…/lntbs…).");
+      const proofs = loadBalance(mint);
+      if (proofs.length === 0) throw new Error("No balance to withdraw on this mint.");
+      const w = wallet.current ?? (await connect(mint.trim()));
+      wallet.current = w;
+      const { change, paid, fee } = await meltToInvoice(w, proofs, inv);
+      saveBalance(mint, change);
+      setBalance(change);
+      setWithdrawInvoice("");
+      log(`✔ Withdrew ${paid} sat (fee reserve ${fee}). Remaining ${sumSat(change)} sat.`, "ok");
+    });
+  }
+
+  const balSat = sumSat(balance);
+  const lockedTotal = positions.reduce((s, p) => s + p.sat, 0);
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
       <section className="flex flex-col gap-1">
         <h1 className="font-bold text-2xl">Wallet</h1>
         <p style={{ color: "var(--muted)" }} className="text-sm">
-          Your Cashu wallet lives entirely in this browser — the key and your outcome tokens are in
-          local storage, never on a server. No custody. Back up the key if you hold tokens.
+          A Cashu wallet that lives entirely in this browser — key and tokens are in local storage,
+          never on a server. Top up over Lightning, withdraw to any invoice. No custody.
         </p>
       </section>
 
-      <Card className="flex flex-col gap-2 p-4">
-        <div className="text-xs" style={{ color: "var(--muted)" }}>wallet key (Nostr/secp256k1)</div>
-        <code className="text-sm break-all" style={{ color: "var(--accent)" }}>{pubkey || "—"}</code>
-        <div className="flex gap-2 flex-wrap">
-          <Button size="sm" onClick={() => copy(secret, "Backup key (secret)")}>Copy backup key</Button>
-          <Button size="sm" onClick={() => copy(pubkey, "Public key")}>Copy pubkey</Button>
-          <Button size="sm" onClick={newKey}>New key</Button>
+      {/* Balance + deposit / withdraw */}
+      <Card className="flex flex-col gap-4 p-4">
+        <div className="flex items-baseline justify-between">
+          <span className="text-xs" style={{ color: "var(--muted)" }}>balance ({mint.replace(/^https?:\/\//, "")})</span>
+          <span className="text-2xl font-bold" style={{ color: "var(--accent)" }}>{balSat} sat</span>
         </div>
-        <p className="text-xs" style={{ color: "var(--muted)" }}>
-          The backup key is your only way to spend these tokens — anyone with it controls them. Keep it safe.
-        </p>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-xs" style={{ color: "var(--muted)" }}>deposit (top up over Lightning)</span>
+          <div className="flex gap-2 items-center">
+            <Input className="w-32" inputMode="numeric" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} />
+            <span className="text-sm" style={{ color: "var(--muted)" }}>sat</span>
+            <Button variant="primary" onClick={startDeposit} disabled={busy}>Deposit</Button>
+            {invoice && <Button onClick={claimDeposit} disabled={busy}>Check &amp; claim</Button>}
+          </div>
+          {invoice && (
+            <Card className="flex flex-col gap-2 p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold">Lightning invoice</span>
+                <Button size="sm" onClick={() => copy(invoice, "Invoice")}>Copy</Button>
+                <a href={`lightning:${invoice}`} className="field px-3 py-1 text-xs rounded">Open wallet</a>
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                alt="invoice QR"
+                width={200}
+                height={200}
+                style={{ background: "#fff", padding: 8, borderRadius: 8, alignSelf: "flex-start" }}
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(invoice.toUpperCase())}`}
+              />
+              <code className="text-xs break-all" style={{ color: "var(--muted)" }}>{invoice}</code>
+            </Card>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-xs" style={{ color: "var(--muted)" }}>withdraw (pay a Lightning invoice)</span>
+          <div className="flex gap-2">
+            <Input className="flex-1" placeholder="bolt11 invoice (lntbs… / lnbc…)" value={withdrawInvoice} onChange={(e) => setWithdrawInvoice(e.target.value)} />
+            <Button onClick={withdraw} disabled={busy || balSat === 0}>Withdraw</Button>
+          </div>
+        </div>
       </Card>
 
+      {/* Outcome positions (locked) */}
       <section className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between">
-          <h2 className="font-bold">Positions</h2>
-          <span className="text-sm" style={{ color: "var(--accent)" }}>{total} sat total</span>
+          <h2 className="font-bold">Outcome positions</h2>
+          <span className="text-sm" style={{ color: "var(--muted)" }}>{lockedTotal} sat locked</span>
         </div>
-
         {positions.length === 0 ? (
-          <Card className="flex flex-col gap-2 p-4">
-            <p className="text-sm" style={{ color: "var(--muted)" }}>
-              No tokens yet. Place a bet to mint outcome tokens — they&apos;ll show up here.
-            </p>
-            <Link href="/" className="text-sm" style={{ color: "var(--accent)" }}>Browse markets →</Link>
-          </Card>
+          <p className="text-sm" style={{ color: "var(--muted)" }}>
+            No outcome tokens yet. <Link href="/" style={{ color: "var(--accent)" }}>Browse markets →</Link>
+          </p>
         ) : (
           <ul className="flex flex-col gap-2">
             {positions.map((p) => (
@@ -136,11 +276,7 @@ export default function WalletPage() {
                   </span>
                   <span className="text-xs break-all" style={{ color: "var(--muted)" }}>{p.market}</span>
                 </div>
-                <Link
-                  href={`/bet?id=${encodeURIComponent(p.market)}`}
-                  className="px-3 py-2 text-xs rounded font-bold whitespace-nowrap inline-block"
-                  style={{ background: "var(--accent)", color: "#000" }}
-                >
+                <Link href={`/bet?id=${encodeURIComponent(p.market)}`} className="px-3 py-2 text-xs rounded font-bold whitespace-nowrap inline-block" style={{ background: "var(--accent)", color: "#000" }}>
                   Redeem →
                 </Link>
               </Card>
@@ -148,6 +284,40 @@ export default function WalletPage() {
           </ul>
         )}
       </section>
+
+      {/* Settings: mint + key */}
+      <details className="rounded p-3" style={{ border: "1px solid var(--border)" }}>
+        <summary className="text-xs cursor-pointer" style={{ color: "var(--muted)" }}>
+          settings — mint &amp; key (use your own)
+        </summary>
+        <div className="flex flex-col gap-3 mt-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs" style={{ color: "var(--muted)" }}>mint URL (use your own mint)</span>
+            <Input value={mint} onChange={(e) => persistMint(e.target.value)} placeholder="https://your-mint…" />
+          </label>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-xs" style={{ color: "var(--muted)" }}>wallet key</span>
+            <code className="text-xs break-all" style={{ color: "var(--accent)" }}>{pubkey || "—"}</code>
+            <div className="flex gap-2 flex-wrap mt-1">
+              <Button size="sm" onClick={() => copy(secret, "Backup key")}>Copy backup key</Button>
+              <Button size="sm" onClick={() => copy(pubkey, "Pubkey")}>Copy pubkey</Button>
+              <Button size="sm" onClick={regenerateKey}>New key</Button>
+            </div>
+            <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>
+              The backup key is the only way to spend these tokens. Anyone with it controls the funds.
+            </p>
+          </div>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-xs" style={{ color: "var(--muted)" }}>import your own key (64-char hex secret)</span>
+            <div className="flex gap-2">
+              <Input className="flex-1" value={importKey} onChange={(e) => setImportKey(e.target.value)} placeholder="your secret key…" />
+              <Button onClick={useImportedKey}>Import</Button>
+            </div>
+          </label>
+        </div>
+      </details>
 
       {status && <Alert kind={status.kind}>{status.msg}</Alert>}
     </div>
