@@ -27,6 +27,7 @@ import { buildDisputeTemplate, buildOrderTemplate, buildReputationTemplate } fro
 import { signTemplate } from "@/lib/sign";
 import { publishAll } from "@/lib/publish";
 import { verifyEvent } from "@/lib/verify";
+import { Button, Card, Input, Select } from "@/components/ui";
 
 function Column({ title, orders }: { title: string; orders: Order[] }) {
   return (
@@ -61,7 +62,6 @@ function OrderForm({ market, onPosted }: { market: string; onPosted: () => void 
   const [price, setPrice] = useState("50");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
 
   async function post() {
     setBusy(true);
@@ -91,19 +91,19 @@ function OrderForm({ market, onPosted }: { market: string; onPosted: () => void 
     <section className="flex flex-col gap-2" style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
       <div className="font-bold">Post an order</div>
       <div className="flex gap-2 flex-wrap items-center text-sm">
-        <select style={field} className="px-2 py-2 rounded" value={side} onChange={(e) => setSide(e.target.value as any)}>
+        <Select value={side} onChange={(e) => setSide(e.target.value as any)}>
           <option value="YES">YES</option>
           <option value="NO">NO</option>
-        </select>
-        <select style={field} className="px-2 py-2 rounded" value={kind} onChange={(e) => setKind(e.target.value as any)}>
+        </Select>
+        <Select value={kind} onChange={(e) => setKind(e.target.value as any)}>
           <option value="bid">bid (buy)</option>
           <option value="ask">ask (sell)</option>
-        </select>
-        <input style={field} className="px-2 py-2 rounded w-28" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="amount sat" />
-        <input style={field} className="px-2 py-2 rounded w-24" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="price" />
-        <button onClick={post} disabled={busy} className="px-4 py-2 rounded font-bold" style={{ background: "var(--accent)", color: "#000" }}>
+        </Select>
+        <Input className="w-28" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="amount sat" />
+        <Input className="w-24" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="price" />
+        <Button variant="primary" onClick={post} disabled={busy}>
           {busy ? "Signing…" : "Sign & post"}
-        </button>
+        </Button>
       </div>
       {status && <p style={{ color: "var(--muted)" }} className="text-xs">{status}</p>}
     </section>
@@ -130,7 +130,7 @@ function betHref(market: Market, announce: OracleAnnounce | null): string {
 function SettlementBanner({ s }: { s: OracleAttestation }) {
   const resolved = s.outcome === "INVALID" ? "INVALID (refunds)" : s.outcome;
   return (
-    <section className="flex flex-col gap-1 rounded p-3" style={{ border: "1px solid var(--accent)" }}>
+    <Card accent className="flex flex-col gap-1 p-3">
       <div className="text-sm font-bold" style={{ color: "var(--accent)" }}>
         Settled: {resolved}
       </div>
@@ -138,7 +138,7 @@ function SettlementBanner({ s }: { s: OracleAttestation }) {
         Oracle Schnorr signature (verify it yourself — relays are untrusted):
       </div>
       <code className="text-xs break-all">{s.signature}</code>
-    </section>
+    </Card>
   );
 }
 
@@ -148,7 +148,6 @@ function RateOracleForm({ oracle, market, onRated }: { oracle: string; market: s
   const [note, setNote] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
 
   async function submit() {
     setBusy(true);
@@ -171,11 +170,11 @@ function RateOracleForm({ oracle, market, onRated }: { oracle: string; market: s
 
   return (
     <div className="flex gap-2 flex-wrap items-center text-sm">
-      <input style={field} className="px-2 py-1 rounded w-24" value={score} onChange={(e) => setScore(e.target.value)} placeholder="-100..100" />
-      <input style={field} className="px-2 py-1 rounded flex-1 min-w-[160px]" value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
-      <button onClick={submit} disabled={busy} className="px-3 py-1 rounded" style={field}>
+      <Input className="w-24" value={score} onChange={(e) => setScore(e.target.value)} placeholder="-100..100" />
+      <Input className="flex-1 min-w-[160px]" value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
+      <Button size="sm" onClick={submit} disabled={busy}>
         {busy ? "Signing…" : "Rate oracle"}
-      </button>
+      </Button>
       {status && <span style={{ color: "var(--muted)" }} className="text-xs w-full">{status}</span>}
     </div>
   );
@@ -285,7 +284,6 @@ function Disputes({ market, attestationId }: { market: string; attestationId?: s
   const [evidence, setEvidence] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
 
   const load = useCallback(async () => {
     setDisputes(await fetchDisputes(relaysFromUrl(), market));
@@ -341,17 +339,17 @@ function Disputes({ market, attestationId }: { market: string; attestationId?: s
       )}
       {attestationId ? (
         <div className="flex gap-2 flex-wrap items-center text-sm">
-          <select style={field} className="px-2 py-1 rounded" value={claim} onChange={(e) => setClaim(e.target.value)}>
+          <Select value={claim} onChange={(e) => setClaim(e.target.value)}>
             {CLAIM_CATEGORIES.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
             ))}
-          </select>
-          <input style={field} className="px-2 py-1 rounded flex-1 min-w-[200px]" value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="evidence (url / event id / note)" />
-          <button onClick={submit} disabled={busy} className="px-3 py-1 rounded" style={field}>
+          </Select>
+          <Input className="flex-1 min-w-[200px]" value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="evidence (url / event id / note)" />
+          <Button size="sm" onClick={submit} disabled={busy}>
             {busy ? "Signing…" : "Raise dispute"}
-          </button>
+          </Button>
         </div>
       ) : (
         <p className="text-xs" style={{ color: "var(--muted)" }}>
@@ -424,14 +422,9 @@ function MarketView() {
         </section>
       )}
 
-      <button
-        onClick={load}
-        disabled={loading}
-        className="self-start px-4 py-2 text-sm rounded font-bold"
-        style={{ background: "var(--accent)", color: "#000" }}
-      >
+      <Button variant="primary" className="self-start" onClick={load} disabled={loading}>
         {loading ? "Loading…" : "Refresh book"}
-      </button>
+      </Button>
 
       {error && (
         <p style={{ color: "var(--muted)" }} className="text-sm">

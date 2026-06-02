@@ -7,6 +7,7 @@ import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
 import { queryRelays, relaysFromUrl } from "@/lib/relay";
 import { verifyEvent } from "@/lib/verify";
 import { OddsBar } from "@/components/OddsBar";
+import { Input, Select } from "@/components/ui";
 
 type StateFilter = "all" | "open" | "expired";
 
@@ -83,38 +84,41 @@ export default function HomePage() {
     });
   }, [markets, q, topic, stateFilter, now]);
 
-  const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
-
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h1 className="font-bold text-lg">Hunch</h1>
-        <p style={{ color: "var(--muted)" }} className="text-sm">
-          Permissionless prediction markets on Bitcoin. No KYC. No custody. Trust the math.
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-3 py-2">
+        <h1 className="font-bold text-2xl sm:text-3xl">Bet on anything. Settle on Bitcoin.</h1>
+        <p style={{ color: "var(--muted)" }} className="text-sm max-w-xl">
+          Permissionless prediction markets on Bitcoin. No KYC, no custody, no token — outcomes are
+          settled by oracle-signed Bitcoin DLCs and paid in Cashu over Lightning. Trust the math.
         </p>
-      </div>
+        <div className="flex gap-2 text-sm">
+          <Link href="/create/" className="px-4 py-2 rounded font-bold inline-block" style={{ background: "var(--accent)", color: "#000" }}>
+            + Create a market
+          </Link>
+        </div>
+      </section>
 
       <div className="flex gap-2 flex-wrap items-center text-sm">
-        <input
-          style={field}
-          className="px-3 py-2 rounded flex-1 min-w-[200px]"
+        <Input
+          className="flex-1 min-w-[200px]"
           placeholder="search question…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <select style={field} className="px-2 py-2 rounded" value={topic} onChange={(e) => setTopic(e.target.value)}>
+        <Select value={topic} onChange={(e) => setTopic(e.target.value)}>
           <option value="">all topics</option>
           {topics.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>
           ))}
-        </select>
-        <select style={field} className="px-2 py-2 rounded" value={stateFilter} onChange={(e) => setStateFilter(e.target.value as StateFilter)}>
+        </Select>
+        <Select value={stateFilter} onChange={(e) => setStateFilter(e.target.value as StateFilter)}>
           <option value="all">all</option>
           <option value="open">open</option>
           <option value="expired">expired</option>
-        </select>
+        </Select>
       </div>
 
       {status && (
@@ -123,11 +127,7 @@ export default function HomePage() {
             {status}
           </p>
           {status === "No markets found yet." && (
-            <Link
-              href="/create/"
-              className="self-start px-4 py-2 text-sm rounded font-bold"
-              style={{ background: "var(--accent)", color: "#000" }}
-            >
+            <Link href="/create/" className="self-start px-4 py-2 text-sm rounded font-bold inline-block" style={{ background: "var(--accent)", color: "#000" }}>
               Create the first market →
             </Link>
           )}
@@ -144,12 +144,7 @@ export default function HomePage() {
           const expired = m.expiry <= now;
           const book = books.get(m.id);
           return (
-            <Link
-              key={m.id}
-              href={`/market?id=${encodeURIComponent(m.id)}`}
-              className="block rounded p-3"
-              style={{ border: "1px solid var(--border)" }}
-            >
+            <Link key={m.id} href={`/market?id=${encodeURIComponent(m.id)}`} className="market-card block rounded p-3">
               <div className="font-bold text-sm">{m.content.question}</div>
               {book && (
                 <div className="mt-2">

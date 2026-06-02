@@ -7,12 +7,7 @@ import { marketId } from "@/lib/hunch";
 import { signTemplate } from "@/lib/sign";
 import { publishAll } from "@/lib/publish";
 import { relaysFromUrl } from "@/lib/relay";
-
-const field = {
-  background: "var(--card)",
-  border: "1px solid var(--border)",
-  color: "var(--fg)",
-} as const;
+import { Alert, Button, Card, Input, Textarea } from "@/components/ui";
 
 // The 21pay oracle + mint running on the Umbrel — proposed by default so creating a market needs
 // only a question + a date. Advanced users can override with their own oracle/mint below.
@@ -89,9 +84,7 @@ export default function CreateMarketPage() {
 
       <label className="flex flex-col gap-1">
         <span className="text-sm font-bold">Question</span>
-        <textarea
-          style={field}
-          className="px-3 py-2 text-sm rounded"
+        <Textarea
           rows={2}
           placeholder="Will BTC close above $100k on 2026-12-31?"
           value={question}
@@ -101,9 +94,7 @@ export default function CreateMarketPage() {
 
       <label className="flex flex-col gap-1">
         <span className="text-sm font-bold">Resolution criteria</span>
-        <textarea
-          style={field}
-          className="px-3 py-2 text-sm rounded"
+        <Textarea
           rows={2}
           placeholder="YES if BTC/USD ≥ 100000 at 23:59 UTC per Coinbase."
           value={resolution}
@@ -116,10 +107,10 @@ export default function CreateMarketPage() {
 
       <label className="flex flex-col gap-1">
         <span className="text-sm font-bold">Closes at</span>
-        <input style={field} className="px-3 py-2 text-sm rounded" type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
+        <Input type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
       </label>
 
-      <div className="rounded p-3 flex flex-col gap-1" style={{ border: "1px solid var(--border)" }}>
+      <Card className="p-3 flex flex-col gap-1">
         <div className="text-sm">
           Oracle:{" "}
           <span style={{ color: "var(--accent)" }}>
@@ -130,7 +121,7 @@ export default function CreateMarketPage() {
           The oracle publishes the result after the deadline. The 21pay oracle is selected for you —
           you don&apos;t need your own. Verify any oracle&apos;s reputation on the market page before betting.
         </div>
-      </div>
+      </Card>
 
       <button
         type="button"
@@ -142,35 +133,30 @@ export default function CreateMarketPage() {
       </button>
 
       {advanced && (
-        <div className="flex flex-col gap-2 rounded p-3" style={{ border: "1px solid var(--border)" }}>
+        <Card className="flex flex-col gap-2 p-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs">Oracle pubkey (x-only hex, 64 chars)</span>
-            <input style={field} className="px-3 py-2 text-sm rounded" value={oracle} onChange={(e) => setOracle(e.target.value)} />
+            <Input value={oracle} onChange={(e) => setOracle(e.target.value)} />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs">Mint URL</span>
-            <input style={field} className="px-3 py-2 text-sm rounded" value={mint} onChange={(e) => setMint(e.target.value)} />
+            <Input value={mint} onChange={(e) => setMint(e.target.value)} />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs">Relays (comma-separated)</span>
-            <input style={field} className="px-3 py-2 text-sm rounded" value={relays} onChange={(e) => setRelays(e.target.value)} />
+            <Input value={relays} onChange={(e) => setRelays(e.target.value)} />
           </label>
-        </div>
+        </Card>
       )}
 
-      <button
-        onClick={submit}
-        disabled={busy}
-        className="self-start px-4 py-2 text-sm rounded font-bold"
-        style={{ background: "var(--accent)", color: "#000" }}
-      >
+      <Button variant="primary" className="self-start" onClick={submit} disabled={busy}>
         {busy ? "Signing…" : "Sign & publish"}
-      </button>
+      </Button>
 
       {status && (
-        <p style={{ color: "var(--muted)" }} className="text-xs break-all">
+        <Alert kind={status.startsWith("Error") ? "error" : status.startsWith("✔") ? "ok" : "info"}>
           {status}
-        </p>
+        </Alert>
       )}
     </div>
   );

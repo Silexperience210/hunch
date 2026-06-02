@@ -10,8 +10,8 @@ import { fetchAnnounce, fetchAttestation } from "@/lib/oracle";
 import { relaysFromUrl, queryRelays } from "@/lib/relay";
 import { KIND_MARKET, parseMarketEvent, type Market } from "@/lib/hunch";
 import { verifyEvent } from "@/lib/verify";
+import { Alert, Button, Card, Input } from "@/components/ui";
 
-const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
 const REFUND_LOCKTIME = Math.floor(Date.now() / 1000) + 90 * 24 * 3600; // 90 days
 // The 21pay oracle (runs on the Umbrel) — pre-filled so users don't paste a key. Override via ?oracle=.
 const DEFAULT_ORACLE = "b32187c658b01420003049758660e62e4a7dd3daefac42076cd1664adce0e335";
@@ -202,20 +202,18 @@ function BetView() {
     });
   }
 
-  const sideButton = (value: "YES" | "NO") => {
-    const selected = outcome === value;
-    return (
-      <button
-        key={value}
-        onClick={() => setOutcome(value)}
-        className="flex-1 px-4 py-3 rounded font-bold text-sm"
-        style={selected ? { background: "var(--accent)", color: "#000" } : field}
-        aria-pressed={selected}
-      >
-        {value}
-      </button>
-    );
-  };
+  const sideButton = (value: "YES" | "NO") => (
+    <Button
+      key={value}
+      variant={outcome === value ? "primary" : "secondary"}
+      size="lg"
+      className="flex-1"
+      onClick={() => setOutcome(value)}
+      aria-pressed={outcome === value}
+    >
+      {value}
+    </Button>
+  );
 
   return (
     <div className="flex flex-col gap-5 max-w-2xl">
@@ -239,7 +237,7 @@ function BetView() {
         <label className="flex flex-col gap-2">
           <span style={{ color: "var(--muted)" }} className="text-xs">stake</span>
           <div className="flex items-center gap-2">
-            <input style={field} className="px-3 py-2 text-sm rounded w-32" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <Input className="w-32" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
             <span style={{ color: "var(--muted)" }} className="text-sm">sat</span>
           </div>
         </label>
@@ -249,23 +247,23 @@ function BetView() {
       <section className="flex flex-col gap-2">
         <span style={{ color: "var(--muted)" }} className="text-xs">deposit &amp; mint</span>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={deposit} disabled={busy} className="px-4 py-2 text-sm rounded font-bold" style={{ background: "var(--accent)", color: "#000" }}>
+          <Button variant="primary" onClick={deposit} disabled={busy}>
             1. Deposit
-          </button>
-          <button onClick={payAndMint} disabled={busy || !invoice} className="px-4 py-2 text-sm rounded font-bold" style={field}>
+          </Button>
+          <Button onClick={payAndMint} disabled={busy || !invoice}>
             2. Pay &amp; mint
-          </button>
+          </Button>
         </div>
       </section>
 
       {invoice && (
-        <div className="flex flex-col gap-2 rounded p-3" style={{ border: "1px solid var(--border)" }}>
+        <Card className="flex flex-col gap-2 p-3">
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold">Lightning invoice</span>
-            <button onClick={copyInvoice} className="px-3 py-1 text-xs rounded" style={field}>
+            <Button size="sm" onClick={copyInvoice}>
               Copy
-            </button>
-            <a href={`lightning:${invoice}`} className="px-3 py-1 text-xs rounded" style={field}>
+            </Button>
+            <a href={`lightning:${invoice}`} className="field px-3 py-1 text-xs rounded">
               Open wallet
             </a>
           </div>
@@ -278,7 +276,7 @@ function BetView() {
             src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(invoice.toUpperCase())}`}
           />
           <code className="text-xs break-all" style={{ color: "var(--muted)" }}>{invoice}</code>
-        </div>
+        </Card>
       )}
 
       {/* 3 · redeem after settlement */}
@@ -290,12 +288,12 @@ function BetView() {
           the refund timeout if the market resolved INVALID).
         </p>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={fetchAtt} disabled={busy} className="px-4 py-2 text-sm rounded font-bold" style={field}>
+          <Button onClick={fetchAtt} disabled={busy}>
             Check settlement
-          </button>
-          <button onClick={doRedeem} disabled={busy} className="px-4 py-2 text-sm rounded font-bold" style={{ background: "var(--accent)", color: "#000" }}>
+          </Button>
+          <Button variant="primary" onClick={doRedeem} disabled={busy}>
             Redeem
-          </button>
+          </Button>
         </div>
       </section>
 
@@ -309,50 +307,39 @@ function BetView() {
             <span style={{ color: "var(--muted)" }} className="text-xs break-all">
               {bettorPub ? `wallet ${bettorPub.slice(0, 16)}… (saved in this browser)` : "creating wallet…"}
             </span>
-            <button
+            <Button
+              size="sm"
               onClick={() => {
                 const s = randomBettorSecret();
                 localStorage.setItem("hunch:wallet-secret", s);
                 setSecret(s);
                 log("New wallet key generated (old tokens stay under the previous key).");
               }}
-              className="px-2 py-1 text-xs rounded"
-              style={field}
               title="Generate a fresh wallet key"
             >
               new key
-            </button>
+            </Button>
           </div>
-          <input style={field} className="px-3 py-2 text-sm rounded" placeholder="mint url" value={mintUrl} onChange={(e) => setMintUrl(e.target.value)} />
-          <input style={field} className="px-3 py-2 text-sm rounded" placeholder="market id (creator:30888:slug)" value={market} onChange={(e) => setMarket(e.target.value)} />
-          <input style={field} className="px-3 py-2 text-sm rounded" placeholder="oracle pubkey (x-only hex)" value={oracle} onChange={(e) => setOracle(e.target.value)} />
-          <input style={field} className="px-3 py-2 text-sm rounded" placeholder="relays (comma-separated)" value={relays} onChange={(e) => setRelays(e.target.value)} />
+          <Input placeholder="mint url" value={mintUrl} onChange={(e) => setMintUrl(e.target.value)} />
+          <Input placeholder="market id (creator:30888:slug)" value={market} onChange={(e) => setMarket(e.target.value)} />
+          <Input placeholder="oracle pubkey (x-only hex)" value={oracle} onChange={(e) => setOracle(e.target.value)} />
+          <Input placeholder="relays (comma-separated)" value={relays} onChange={(e) => setRelays(e.target.value)} />
           <div className="flex gap-2">
-            <input style={field} className="px-3 py-2 text-sm rounded flex-1" placeholder="oracle nonce R (x-only hex, from the kind:88 announce)" value={nonce} onChange={(e) => setNonce(e.target.value)} />
-            <button onClick={fetchNonce} disabled={busy} className="px-3 py-2 text-sm rounded whitespace-nowrap" style={field}>
+            <Input className="flex-1" placeholder="oracle nonce R (x-only hex, from the kind:88 announce)" value={nonce} onChange={(e) => setNonce(e.target.value)} />
+            <Button className="whitespace-nowrap" onClick={fetchNonce} disabled={busy}>
               fetch
-            </button>
+            </Button>
           </div>
           <div className="flex gap-2">
-            <input style={field} className="px-3 py-2 text-sm rounded flex-1" placeholder="oracle attestation signature (kind:89 sig hex)" value={attestationSig} onChange={(e) => setAttestationSig(e.target.value)} />
-            <button onClick={fetchAtt} disabled={busy} className="px-3 py-2 text-sm rounded whitespace-nowrap" style={field}>
+            <Input className="flex-1" placeholder="oracle attestation signature (kind:89 sig hex)" value={attestationSig} onChange={(e) => setAttestationSig(e.target.value)} />
+            <Button className="whitespace-nowrap" onClick={fetchAtt} disabled={busy}>
               fetch
-            </button>
+            </Button>
           </div>
         </div>
       </details>
 
-      {status && (
-        <p
-          className="text-xs break-all rounded px-3 py-2"
-          style={{
-            border: `1px solid ${status.kind === "error" ? "var(--error)" : status.kind === "ok" ? "var(--accent)" : "var(--border)"}`,
-            color: status.kind === "error" ? "var(--error)" : status.kind === "ok" ? "var(--accent)" : "var(--muted)",
-          }}
-        >
-          {status.msg}
-        </p>
-      )}
+      {status && <Alert kind={status.kind}>{status.msg}</Alert>}
     </div>
   );
 }
