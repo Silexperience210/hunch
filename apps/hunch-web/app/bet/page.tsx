@@ -11,6 +11,7 @@ import { relaysFromUrl, queryRelays } from "@/lib/relay";
 import { KIND_MARKET, parseMarketEvent, type Market } from "@/lib/hunch";
 import { verifyEvent } from "@/lib/verify";
 import { Alert, Button, Card, Input } from "@/components/ui";
+import { copyText } from "@/lib/clipboard";
 
 const REFUND_LOCKTIME = Math.floor(Date.now() / 1000) + 90 * 24 * 3600; // 90 days
 // The 21pay oracle (runs on the Umbrel) — pre-filled so users don't paste a key. Override via ?oracle=.
@@ -124,7 +125,7 @@ function BetView() {
 
   async function copyInvoice() {
     try {
-      await navigator.clipboard.writeText(invoice);
+      await copyText(invoice);
       log("✔ Invoice copied to clipboard.", "ok");
     } catch {
       log("Copy failed — select the invoice text manually.", "error");

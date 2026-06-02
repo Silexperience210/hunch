@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Proof, Wallet } from "@cashu/cashu-ts";
 import { compressedPubkey, randomBettorSecret } from "@/lib/dlc";
-import { connect, depositQuote, meltToInvoice, mintPlain, waitPaid } from "@/lib/wallet";
+import { connect, depositQuote, meltToInvoice, mintPlain, payWithWebln, waitPaid } from "@/lib/wallet";
+import { copyText } from "@/lib/clipboard";
 import { Alert, Button, Card, Input } from "@/components/ui";
 
 const SECRET_KEY = "hunch:wallet-secret";
@@ -76,6 +77,7 @@ export default function WalletPage() {
 
   const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState(false);
+  const [waiting, setWaiting] = useState(false);
   const wallet = useRef<Wallet | null>(null);
   const quote = useRef<any>(null);
 
@@ -127,7 +129,7 @@ export default function WalletPage() {
 
   async function copy(text: string, label: string) {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       log(`✔ ${label} copied.`, "ok");
     } catch {
       log("Copy failed — select the text manually.", "error");
@@ -154,32 +156,53 @@ export default function WalletPage() {
     log("✔ Imported your wallet key.", "ok");
   }
 
+  // Deposit is one step for the user: get the invoice, then we watch for payment and credit the
+  // tokens automatically — no second click. WebLN auto-pays if a provider is present.
   async function startDeposit() {
-    await guard(async () => {
-      const amt = Number(depositAmount);
-      if (!Number.isFinite(amt) || amt <= 0) throw new Error("Enter a deposit amount in sat.");
+    const amt = Number(depositAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      log("Enter a deposit amount in sat.", "error");
+      return;
+    }
+    setBusy(true);
+    try {
       const w = await connect(mint.trim());
       wallet.current = w;
       const { quote: q, invoice: inv } = await depositQuote(w, amt);
       quote.current = q;
       setInvoice(inv);
-      log("Pay the Lightning invoice, then “Check & claim”.");
-    });
+      log("Scan or pay the invoice — your tokens are credited automatically.");
+      autoCredit(w, q, amt); // background: poll for payment, then mint + credit
+      try {
+        await payWithWebln(inv); // auto-pay if Alby/WebLN is available; ignore otherwise
+      } catch {
+        /* no WebLN — user pays manually, autoCredit still catches it */
+      }
+    } catch (e) {
+      log("Error: " + (e as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function claimDeposit() {
-    await guard(async () => {
-      const w = wallet.current;
-      if (!w || !quote.current) throw new Error("Start a deposit first.");
-      await waitPaid(w, quote.current);
-      const fresh = await mintPlain(w, Number(depositAmount), quote.current);
+  // Polls the mint until the invoice is paid, then mints + credits — runs in the background so the
+  // rest of the wallet stays usable. ~10 min window.
+  async function autoCredit(w: Wallet, q: any, amt: number) {
+    setWaiting(true);
+    try {
+      await waitPaid(w, q, 600);
+      const fresh = await mintPlain(w, amt, q);
       const next = [...loadBalance(mint), ...fresh];
       saveBalance(mint, next);
       setBalance(next);
       setInvoice("");
       quote.current = null;
-      log(`✔ Deposited ${sumSat(fresh)} sat. New balance ${sumSat(next)} sat.`, "ok");
-    });
+      log(`✔ Credited ${sumSat(fresh)} sat — balance ${sumSat(next)} sat.`, "ok");
+    } catch {
+      log("Still waiting for the payment — re-deposit if the invoice expired.", "info");
+    } finally {
+      setWaiting(false);
+    }
   }
 
   async function withdraw() {
@@ -223,13 +246,15 @@ export default function WalletPage() {
           <div className="flex gap-2 items-center">
             <Input className="w-32" inputMode="numeric" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} />
             <span className="text-sm" style={{ color: "var(--muted)" }}>sat</span>
-            <Button variant="primary" onClick={startDeposit} disabled={busy}>Deposit</Button>
-            {invoice && <Button onClick={claimDeposit} disabled={busy}>Check &amp; claim</Button>}
+            <Button variant="primary" onClick={startDeposit} disabled={busy || waiting}>
+              {waiting ? "Waiting for payment…" : "Deposit"}
+            </Button>
           </div>
           {invoice && (
             <Card className="flex flex-col gap-2 p-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold">Lightning invoice</span>
+                {waiting && <span className="text-xs" style={{ color: "var(--accent)" }}>⏳ waiting for payment — auto-credits</span>}
                 <Button size="sm" onClick={() => copy(invoice, "Invoice")}>Copy</Button>
                 <a href={`lightning:${invoice}`} className="field px-3 py-1 text-xs rounded">Open wallet</a>
               </div>
