@@ -58,6 +58,20 @@ function BetView() {
     return [...new Set([HUNCH_RELAY, ...fromField])];
   }
 
+  // Wallet key: persisted in the browser so it survives reloads (a "bet in progress" stays
+  // redeemable) and is always present — no manual "generate" step before depositing.
+  useEffect(() => {
+    if (secret) return;
+    const KEY = "hunch:wallet-secret";
+    let s = localStorage.getItem(KEY);
+    if (!s) {
+      s = randomBettorSecret();
+      localStorage.setItem(KEY, s);
+    }
+    setSecret(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Auto-load the oracle nonce R on first render when it wasn't passed in the URL,
   // so users never have to paste it. Silent: failures just leave the field editable.
   const autoTried = useRef(false);
@@ -166,12 +180,22 @@ function BetView() {
       </p>
 
       <div className="flex gap-2 items-center">
-        <button onClick={() => setSecret(randomBettorSecret())} className="px-3 py-2 text-sm rounded" style={field}>
-          Generate wallet key
-        </button>
         <span style={{ color: "var(--muted)" }} className="text-xs break-all">
-          {bettorPub ? `B = ${bettorPub.slice(0, 20)}…` : "no key yet"}
+          {bettorPub ? `wallet ${bettorPub.slice(0, 16)}… (saved in this browser)` : "creating wallet…"}
         </span>
+        <button
+          onClick={() => {
+            const s = randomBettorSecret();
+            localStorage.setItem("hunch:wallet-secret", s);
+            setSecret(s);
+            log("New wallet key generated (old tokens stay under the previous key).");
+          }}
+          className="px-2 py-1 text-xs rounded"
+          style={field}
+          title="Generate a fresh wallet key"
+        >
+          new key
+        </button>
       </div>
 
       <input style={field} className="px-3 py-2 text-sm rounded" placeholder="mint url" value={mintUrl} onChange={(e) => setMintUrl(e.target.value)} />
