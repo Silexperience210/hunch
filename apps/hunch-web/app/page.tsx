@@ -25,15 +25,29 @@ export default function HomePage() {
     let cancelled = false;
     (async () => {
       // Markets (kind 30888) and orders (kind 38888) in parallel — orders drive the implied-odds bar.
-      const [marketEvents, orderEvents] = await Promise.all([
+      const [marketEvents, orderEvents, delEvents] = await Promise.all([
         queryRelays(relays, { kinds: [KIND_MARKET], limit: 200 }),
         queryRelays(relays, { kinds: [KIND_ORDER], limit: 500 }),
+        queryRelays(relays, { kinds: [5], limit: 200 }), // NIP-09 deletions
       ]);
+
+      // NIP-09: a market is deleted if its creator published a kind:5 referencing its `a` coordinate.
+      const deleted = new Set<string>();
+      for (const ev of delEvents.filter(verifyEvent)) {
+        for (const t of ev.tags) {
+          if (t[0] === "a" && typeof t[1] === "string") {
+            const [k, pk, ...rest] = t[1].split(":");
+            if (k === String(KIND_MARKET) && pk === ev.pubkey) deleted.add(`${pk}:${KIND_MARKET}:${rest.join(":")}`);
+          }
+        }
+      }
+
       const seen = new Set<string>();
       const parsed = marketEvents
         .filter(verifyEvent)
         .map(parseMarketEvent)
         .filter((m): m is Market => m !== null)
+        .filter((m) => !deleted.has(m.id))
         .filter((m) => {
           if (seen.has(m.id)) return false;
           seen.add(m.id);
@@ -72,17 +86,27 @@ export default function HomePage() {
     return [...set].sort();
   }, [markets]);
 
+  // Activity = total live orders in a market's book; drives the "most active" ranking + badge.
+  const activity = useMemo(() => {
+    const a = new Map<string, number>();
+    for (const [id, b] of books) a.set(id, b.yesBids.length + b.yesAsks.length + b.noBids.length + b.noAsks.length);
+    return a;
+  }, [books]);
+
   const now = Math.floor(Date.now() / 1000);
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return markets.filter((m) => {
-      if (needle && !m.content.question.toLowerCase().includes(needle)) return false;
-      if (topic && m.category !== topic && !m.topics.includes(topic)) return false;
-      if (stateFilter === "open" && m.expiry <= now) return false;
-      if (stateFilter === "expired" && m.expiry > now) return false;
-      return true;
-    });
-  }, [markets, q, topic, stateFilter, now]);
+    return markets
+      .filter((m) => {
+        if (needle && !m.content.question.toLowerCase().includes(needle)) return false;
+        if (topic && m.category !== topic && !m.topics.includes(topic)) return false;
+        if (stateFilter === "open" && m.expiry <= now) return false;
+        if (stateFilter === "expired" && m.expiry > now) return false;
+        return true;
+      })
+      // Most active first, then soonest to close.
+      .sort((x, y) => (activity.get(y.id) ?? 0) - (activity.get(x.id) ?? 0) || x.expiry - y.expiry);
+  }, [markets, q, topic, stateFilter, now, activity]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -140,16 +164,31 @@ export default function HomePage() {
       )}
 
       <div className="flex flex-col gap-3">
-        {filtered.map((m) => {
+        {filtered.map((m, i) => {
           const expired = m.expiry <= now;
           const book = books.get(m.id);
+          const acts = activity.get(m.id) ?? 0;
+          const hot = acts > 0 && i === 0; // most active = first (sorted by activity)
           return (
-            <Link key={m.id} href={`/market?id=${encodeURIComponent(m.id)}`} className="market-card block rounded p-3">
-              <div className="font-bold text-sm">{m.content.question}</div>
+            <Link
+              key={m.id}
+              href={`/market?id=${encodeURIComponent(m.id)}`}
+              className="market-card block rounded p-3"
+              style={hot ? { borderColor: "var(--accent)" } : undefined}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="font-bold text-sm">{m.content.question}</div>
+                {acts > 0 && (
+                  <span className="text-xs whitespace-nowrap" style={{ color: "var(--accent)" }}>
+                    🔥 {acts} order{acts === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
               <div className="mt-2">
                 <OddsBar book={book} compact />
               </div>
               <div style={{ color: "var(--muted)" }} className="text-xs mt-2 flex gap-3 flex-wrap">
+                {hot && <span style={{ color: "var(--accent)" }}>most active</span>}
                 <span style={{ color: expired ? "var(--muted)" : "var(--accent)" }}>{expired ? "expired" : "open"}</span>
                 <span>oracle {m.oracle.slice(0, 12)}…</span>
                 <span>expiry {new Date(m.expiry * 1000).toISOString().slice(0, 10)}</span>
