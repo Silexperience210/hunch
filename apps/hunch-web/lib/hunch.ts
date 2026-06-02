@@ -58,6 +58,8 @@ export interface Market {
   category?: string;
   image?: string;
   topics: string[];
+  /** Optional machine-readable resolution spec (connector JSON) for oracle auto-resolution. */
+  resolutionSpec?: string;
   content: MarketContent;
 }
 
@@ -94,6 +96,7 @@ export function parseMarketEvent(ev: NostrEvent): Market | null {
     category: tagValue(ev.tags, "category"),
     image: tagValue(ev.tags, "image"),
     topics: tagValues(ev.tags, "t"),
+    resolutionSpec: tagValue(ev.tags, "resolution_spec"),
     content: {
       question: content.question,
       resolution_criteria: content.resolution_criteria ?? "",

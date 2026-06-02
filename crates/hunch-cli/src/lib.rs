@@ -33,6 +33,8 @@ pub struct MarketParams {
     pub category: Option<String>,
     pub image: Option<String>,
     pub topics: Vec<String>,
+    /// Optional machine-readable resolution spec (connector JSON) for auto-resolution.
+    pub resolution_spec: Option<String>,
 }
 
 /// Builds and validates a [`Market`]. Validation runs the protocol's own `from_event` over the
@@ -57,6 +59,7 @@ pub fn build_market(p: MarketParams) -> Result<Market> {
         category: p.category,
         image: p.image,
         topics: p.topics,
+        resolution_spec: p.resolution_spec,
         content: MarketContent {
             question: p.question,
             resolution_criteria: p.resolution_criteria,
@@ -273,6 +276,7 @@ mod tests {
             category: Some("crypto".into()),
             image: None,
             topics: vec!["bitcoin".into(), "macro".into()],
+            resolution_spec: None,
         }
     }
 

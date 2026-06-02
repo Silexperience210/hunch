@@ -249,6 +249,9 @@ enum MarketCmd {
         /// Topic tag (repeatable).
         #[arg(long = "topic")]
         topics: Vec<String>,
+        /// Optional connector resolution spec (JSON, or `@path`) for oracle auto-resolution.
+        #[arg(long)]
+        resolution_spec: Option<String>,
     },
     /// Query relays for markets (kind 30888) and print them.
     List {
@@ -342,9 +345,22 @@ async fn main() -> Result<()> {
                 category,
                 image,
                 topics,
+                resolution_spec,
             } => {
                 let keypair = key.keypair()?;
                 let creator_pubkey = hex::encode(keypair.x_only_public_key().0.serialize());
+
+                // Resolution spec may be inline JSON or @path; read the file if prefixed.
+                let resolution_spec = match resolution_spec {
+                    Some(s) => match s.strip_prefix('@') {
+                        Some(path) => Some(
+                            std::fs::read_to_string(path)
+                                .with_context(|| format!("reading spec file {path}"))?,
+                        ),
+                        None => Some(s),
+                    },
+                    None => None,
+                };
 
                 let market = build_market(MarketParams {
                     d: slug.clone(),
@@ -360,6 +376,7 @@ async fn main() -> Result<()> {
                     category,
                     image,
                     topics,
+                    resolution_spec,
                 })?;
                 let (tags, content) = market.to_event_parts()?;
                 let event = build_signed_event(

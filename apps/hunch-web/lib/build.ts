@@ -32,6 +32,8 @@ export interface MarketParams {
   category?: string;
   image?: string;
   topics?: string[];
+  /** Optional connector resolution spec (JSON string) for oracle auto-resolution. */
+  resolutionSpec?: string;
 }
 
 /** Builds the unsigned kind:30888 market event template. Outcomes are the HIP-2 canonical set. */
@@ -48,6 +50,7 @@ export function buildMarketTemplate(p: MarketParams): EventTemplate {
   ];
   if (p.category) tags.push(["category", p.category]);
   if (p.image) tags.push(["image", p.image]);
+  if (p.resolutionSpec) tags.push(["resolution_spec", p.resolutionSpec]);
   for (const t of p.topics ?? []) tags.push(["t", t]);
 
   const content = JSON.stringify({

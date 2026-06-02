@@ -35,6 +35,7 @@ export default function CreateMarketPage() {
   const [oracle, setOracle] = useState(DEFAULT_ORACLE);
   const [mint, setMint] = useState(DEFAULT_MINT);
   const [relays, setRelays] = useState(relaysFromUrl().join(", "));
+  const [resolutionSpec, setResolutionSpec] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -50,6 +51,16 @@ export default function CreateMarketPage() {
       if (!Number.isFinite(expiryTs)) throw new Error("Pick a close date.");
       if (!/^[0-9a-f]{64}$/i.test(oracle.trim())) throw new Error("Oracle must be a 64-char hex key.");
 
+      // Optional auto-resolution spec must be valid JSON if provided.
+      const specRaw = resolutionSpec.trim();
+      if (specRaw) {
+        try {
+          JSON.parse(specRaw);
+        } catch {
+          throw new Error("Auto-resolution spec must be valid JSON (or leave it empty).");
+        }
+      }
+
       const template = buildMarketTemplate({
         slug,
         question: question.trim(),
@@ -58,6 +69,7 @@ export default function CreateMarketPage() {
         dlcContract: PLACEHOLDER_DLC,
         expiry: expiryTs,
         resolution: resolution.trim(),
+        resolutionSpec: specRaw || undefined,
       });
       const signed = await signTemplate(template);
       const id = marketId(signed.pubkey, slug);
@@ -145,6 +157,18 @@ export default function CreateMarketPage() {
           <label className="flex flex-col gap-1">
             <span className="text-xs">Relays (comma-separated)</span>
             <Input value={relays} onChange={(e) => setRelays(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs">Auto-resolution spec (optional JSON)</span>
+            <Textarea
+              rows={2}
+              placeholder={`{"connector":"price","asset":"BTC","quote":"USD","op":">=","threshold":100000}`}
+              value={resolutionSpec}
+              onChange={(e) => setResolutionSpec(e.target.value)}
+            />
+            <span className="text-xs" style={{ color: "var(--muted)" }}>
+              If set, the oracle can resolve this market automatically (price / weather / onchain / http). Leave empty for manual resolution.
+            </span>
           </label>
         </Card>
       )}

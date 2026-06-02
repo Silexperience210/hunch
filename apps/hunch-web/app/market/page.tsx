@@ -119,6 +119,28 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Human-readable summary of a market's auto-resolution spec, for transparency at bet time. */
+function summarizeSpec(raw?: string): string {
+  if (!raw) return "manual (oracle decides)";
+  try {
+    const s = JSON.parse(raw) as Record<string, unknown>;
+    switch (s.connector) {
+      case "price":
+        return `auto · price ${s.asset}/${s.quote ?? "USD"} ${s.op} ${s.threshold} (${((s.sources as string[]) ?? ["coinbase", "kraken"]).join("+")})`;
+      case "weather":
+        return `auto · weather ${s.metric ?? "precipitation_sum"} @(${s.lat},${s.lon}) ${s.date} ${s.op} ${s.threshold}`;
+      case "onchain":
+        return `auto · onchain ${s.metric} ${s.op} ${s.threshold}`;
+      case "http":
+        return `auto · http ${s.url} ${s.op} ${s.threshold}`;
+      default:
+        return `auto · ${s.connector ?? "custom"}`;
+    }
+  } catch {
+    return "custom spec";
+  }
+}
+
 /** Deep-link to /bet with everything the wallet needs pre-filled (mint + nonce when known). */
 function betHref(market: Market, announce: OracleAnnounce | null): string {
   const q = new URLSearchParams({ id: market.id, oracle: market.oracle, mint: market.mint });
@@ -260,6 +282,7 @@ function MarketMeta({ id }: { id: string }) {
         <Row label="dlc_contract" value={market.dlcContract} />
         <Row label="expiry" value={new Date(market.expiry * 1000).toISOString()} />
         <Row label="resolution" value={market.content.resolution_criteria || "—"} />
+        <Row label="resolves by" value={summarizeSpec(market.resolutionSpec)} />
         <Row label="oracle nonce" value={announce ? `committed (${announce.nonce.slice(0, 16)}…)` : "not announced yet"} />
       </section>
       <RateOracleForm oracle={market.oracle} market={market.id} onRated={() => loadRep(market.oracle)} />

@@ -82,6 +82,9 @@ pub struct Market {
     pub image: Option<String>,
     /// Free-form topic tags (multiple allowed; `t` tags in source event).
     pub topics: Vec<String>,
+    /// Optional machine-readable resolution spec (a connector JSON; `resolution_spec` tag). When
+    /// present, an oracle can resolve the market automatically (see `hunch-oracle` connectors).
+    pub resolution_spec: Option<String>,
     /// Parsed content body.
     pub content: MarketContent,
 }
@@ -162,6 +165,7 @@ impl Market {
 
         let category = optional_tag(tags, "category").map(str::to_string);
         let image = optional_tag(tags, "image").map(str::to_string);
+        let resolution_spec = optional_tag(tags, "resolution_spec").map(str::to_string);
         let topics: Vec<String> = tags
             .iter()
             .filter(|t| t.first().map(|k| k == "t").unwrap_or(false))
@@ -179,6 +183,7 @@ impl Market {
             category,
             image,
             topics,
+            resolution_spec,
             content,
         })
     }
@@ -206,6 +211,9 @@ impl Market {
         }
         if let Some(image) = &self.image {
             tags.push(vec!["image".into(), image.clone()]);
+        }
+        if let Some(spec) = &self.resolution_spec {
+            tags.push(vec!["resolution_spec".into(), spec.clone()]);
         }
         for topic in &self.topics {
             tags.push(vec!["t".into(), topic.clone()]);
