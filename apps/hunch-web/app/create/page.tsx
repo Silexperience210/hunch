@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { buildMarketTemplate } from "@/lib/build";
 import { marketId } from "@/lib/hunch";
-import { signTemplate } from "@/lib/sign";
+import { getPublicKey, setSignerMode, signTemplate, usingLocalSigner } from "@/lib/sign";
+import { setLocalSecret } from "@/lib/localSigner";
 import { publishAll } from "@/lib/publish";
 import { relaysFromUrl } from "@/lib/relay";
 import { Alert, Button, Card, Input, Select, Textarea } from "@/components/ui";
@@ -95,6 +96,21 @@ export default function CreateMarketPage() {
   const slug = useMemo(() => `${slugify(question)}-${Math.floor(Date.now() / 1000) % 100000}`, [question]);
   const usingDefaultOracle = oracle.trim() === DEFAULT_ORACLE;
 
+  // Signing identity: extension (NIP-07) when present, else an in-browser key (works on mobile).
+  const [signerPub, setSignerPub] = useState("");
+  const [isLocal, setIsLocal] = useState(true);
+  const [hasExtension, setHasExtension] = useState(false);
+  const [importNsec, setImportNsec] = useState("");
+  const refreshSigner = () => {
+    setIsLocal(usingLocalSigner());
+    setHasExtension(!!(globalThis as { nostr?: unknown }).nostr);
+    getPublicKey().then(setSignerPub).catch(() => setSignerPub(""));
+  };
+  useEffect(() => {
+    refreshSigner();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function submit() {
     setBusy(true);
     setStatus(null);
@@ -135,9 +151,33 @@ export default function CreateMarketPage() {
       <Link href="/" className="text-sm">← markets</Link>
       <h1 className="font-bold">Create a market</h1>
       <p style={{ color: "var(--muted)" }} className="text-xs">
-        Ask a yes/no question with a clear deadline. Signed with your Nostr extension (NIP-07) —
-        no key custody. Outcomes are always YES / NO / INVALID.
+        Ask a yes/no question with a clear deadline. Outcomes are always YES / NO / INVALID.
       </p>
+
+      {/* Signing identity — NIP-07 extension when present, else an in-browser key (works on phones). */}
+      <Card className="flex flex-col gap-2 p-3">
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <span style={{ color: "var(--muted)" }}>signing as</span>
+          <code className="break-all" style={{ color: "var(--accent)" }}>{signerPub ? `${signerPub.slice(0, 16)}…` : "…"}</code>
+          <span style={{ color: "var(--muted)" }}>· {isLocal ? "in-browser key" : "Nostr extension"}</span>
+          {hasExtension && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setSignerMode(isLocal ? "nip07" : "local");
+                refreshSigner();
+              }}
+            >
+              {isLocal ? "use extension" : "use in-browser key"}
+            </Button>
+          )}
+        </div>
+        {isLocal && (
+          <span className="text-xs" style={{ color: "var(--muted)" }}>
+            No extension needed — your key is stored in this browser. Back it up from the Wallet page.
+          </span>
+        )}
+      </Card>
 
       <label className="flex flex-col gap-1">
         <span className="text-sm font-bold">Question</span>
@@ -266,6 +306,28 @@ export default function CreateMarketPage() {
           <label className="flex flex-col gap-1">
             <span className="text-xs">Relays (comma-separated)</span>
             <Input value={relays} onChange={(e) => setRelays(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs">Import a Nostr key (64-char hex) to sign with your own identity</span>
+            <div className="flex gap-2">
+              <Input className="flex-1" value={importNsec} onChange={(e) => setImportNsec(e.target.value)} placeholder="your secret key…" />
+              <Button
+                onClick={() => {
+                  const k = importNsec.trim().toLowerCase();
+                  if (!/^[0-9a-f]{64}$/.test(k)) {
+                    setStatus("Error: import a 64-char hex secret key.");
+                    return;
+                  }
+                  setLocalSecret(k);
+                  setSignerMode("local");
+                  setImportNsec("");
+                  refreshSigner();
+                  setStatus("✔ Imported your Nostr key — signing with the in-browser identity.");
+                }}
+              >
+                Import
+              </Button>
+            </div>
           </label>
         </Card>
       )}
