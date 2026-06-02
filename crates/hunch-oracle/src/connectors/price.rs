@@ -2,14 +2,14 @@
 //!
 //! Aggregates several sources (default Coinbase + Kraken) by **median** so a single feed being
 //! wrong or manipulated can't flip the outcome, then compares to the threshold. The decision logic
-//! ([`decide`], [`median`], [`Op::eval`]) is pure and unit-tested; the HTTP fetch is a thin layer
-//! exercised only at runtime.
+//! ([`decide`], [`median`]) is pure and unit-tested; the HTTP fetch is a thin layer exercised only
+//! at runtime. The comparison [`Op`](super::Op) is shared across connectors.
 
 use anyhow::{anyhow, Context, Result};
 use hunch_protocol::outcome::Outcome;
 use serde::Deserialize;
 
-use super::Resolution;
+use super::{Op, Resolution};
 
 /// "Resolve YES if `asset/quote` `op` `threshold`" — e.g. BTC/USD >= 100000.
 #[derive(Debug, Deserialize)]
@@ -35,31 +35,6 @@ fn default_sources() -> Vec<String> {
     vec!["coinbase".to_string(), "kraken".to_string()]
 }
 
-/// Comparison operator, deserialized from the usual symbols (`>=`, `>`, `<=`, `<`).
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
-pub enum Op {
-    #[serde(rename = ">=")]
-    Gte,
-    #[serde(rename = ">")]
-    Gt,
-    #[serde(rename = "<=")]
-    Lte,
-    #[serde(rename = "<")]
-    Lt,
-}
-
-impl Op {
-    /// Evaluates `value <op> threshold`.
-    pub fn eval(self, value: f64, threshold: f64) -> bool {
-        match self {
-            Op::Gte => value >= threshold,
-            Op::Gt => value > threshold,
-            Op::Lte => value <= threshold,
-            Op::Lt => value < threshold,
-        }
-    }
-}
-
 /// Median of a slice (mean of the two middle values for even length). `None` if empty.
 pub fn median(values: &[f64]) -> Option<f64> {
     if values.is_empty() {
@@ -78,11 +53,7 @@ pub fn median(values: &[f64]) -> Option<f64> {
 /// Pure decision: given the aggregated price, YES if the comparison holds, else NO.
 /// (INVALID is reserved for the case where no source could be reached — handled in [`resolve`].)
 pub fn decide(spec: &PriceSpec, aggregated: f64) -> Outcome {
-    if spec.op.eval(aggregated, spec.threshold) {
-        Outcome::Yes
-    } else {
-        Outcome::No
-    }
+    spec.op.decide(aggregated, spec.threshold)
 }
 
 /// Fetches each source, takes the median, and decides. Errors only if no source returned a price.
@@ -154,15 +125,6 @@ async fn fetch_price(source: &str, asset: &str, quote: &str) -> Result<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn op_eval() {
-        assert!(Op::Gte.eval(100.0, 100.0));
-        assert!(!Op::Gt.eval(100.0, 100.0));
-        assert!(Op::Lte.eval(100.0, 100.0));
-        assert!(Op::Lt.eval(99.0, 100.0));
-        assert!(!Op::Lt.eval(100.0, 100.0));
-    }
 
     #[test]
     fn median_odd_even_empty() {
