@@ -89,6 +89,16 @@ impl NonceStore {
         Ok(entry.clone())
     }
 
+    /// Whether `market` already has an announced nonce (so the daemon can skip re-announcing).
+    pub fn is_announced(&self, market: &str) -> bool {
+        self.entries.contains_key(market)
+    }
+
+    /// The outcome `market` has already attested, if any (so the daemon can skip re-resolving).
+    pub fn attested_outcome(&self, market: &str) -> Option<&str> {
+        self.entries.get(market).and_then(|e| e.attested.as_deref())
+    }
+
     /// Records that `market` has attested `outcome`, locking its nonce. Persists immediately.
     pub fn commit_attest(&mut self, market: &str, outcome: &str) -> Result<()> {
         let entry = self
