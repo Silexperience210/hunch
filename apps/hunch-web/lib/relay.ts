@@ -68,8 +68,9 @@ export async function queryRelays(urls: string[], filter: RelayFilter, timeoutMs
   return [...byId.values()];
 }
 
-/** Default public relays (override in the UI). Hunch is multi-relay by design (CLAUDE.md). */
-export const DEFAULT_RELAYS = ["wss://nos.lol", "wss://relay.damus.io"];
+/** Default relays (override in the UI or via ?relays=). The 21pay relay carries the live Hunch
+ * markets/oracle; the public relays are kept as fallbacks. Hunch is multi-relay by design (CLAUDE.md). */
+export const DEFAULT_RELAYS = ["wss://relay.21pay.org", "wss://nos.lol", "wss://relay.damus.io"];
 
 /**
  * Relays to use for reads: the `?relays=` query param (comma-separated wss URLs) if present,

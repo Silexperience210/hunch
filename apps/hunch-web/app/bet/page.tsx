@@ -11,12 +11,14 @@ import { relaysFromUrl } from "@/lib/relay";
 
 const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
 const REFUND_LOCKTIME = Math.floor(Date.now() / 1000) + 90 * 24 * 3600; // 90 days
+// The 21pay oracle (runs on the Umbrel) — pre-filled so users don't paste a key. Override via ?oracle=.
+const DEFAULT_ORACLE = "b32187c658b01420003049758660e62e4a7dd3daefac42076cd1664adce0e335";
 
 function BetView() {
   const params = useSearchParams();
-  const [mintUrl, setMintUrl] = useState(params.get("mint") || "http://127.0.0.1:8085");
+  const [mintUrl, setMintUrl] = useState(params.get("mint") || "https://mint-signet.21pay.org");
   const [market, setMarket] = useState(params.get("id") ?? "");
-  const [oracle, setOracle] = useState(params.get("oracle") ?? "");
+  const [oracle, setOracle] = useState(params.get("oracle") || DEFAULT_ORACLE);
   const [nonce, setNonce] = useState(params.get("nonce") ?? "");
   const [relays, setRelays] = useState(relaysFromUrl().join(", "));
   const [outcome, setOutcome] = useState<"YES" | "NO">("YES");
