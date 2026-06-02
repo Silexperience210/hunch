@@ -2,35 +2,32 @@
 // Presentational only (no hooks) — the probability is computed by `impliedOdds` in lib/orderbook.
 // Implied odds come from on-relay bids, which are untrusted and thin; this is a market signal,
 // not a guarantee. Settlement is the oracle attestation, shown separately.
+//
+// Always renders a bar so every market shows the element: with two-sided liquidity it splits
+// YES/NO; otherwise it's a flat muted track labelled "—" ("no odds yet").
 
 import { impliedOdds, type OrderBook } from "@/lib/orderbook";
 
-export function OddsBar({ book, compact = false }: { book: OrderBook; compact?: boolean }) {
-  const odds = impliedOdds(book);
+export function OddsBar({ book, compact = false }: { book?: OrderBook | null; compact?: boolean }) {
+  const odds = book ? impliedOdds(book) : null;
+  const has = odds !== null;
+  const yes = odds?.yes ?? 50;
+  const no = odds?.no ?? 50;
 
-  if (!odds) {
-    return (
-      <div className="text-xs" style={{ color: "var(--muted)" }}>
-        {compact ? "no implied odds yet" : "No implied odds yet — needs a YES and a NO bid in the book."}
-      </div>
-    );
-  }
-
-  const { yes, no } = odds;
   return (
     <div className="flex flex-col gap-1">
       <div
         className="flex w-full overflow-hidden rounded"
         style={{ height: compact ? 6 : 10, background: "var(--border)" }}
         role="img"
-        aria-label={`Implied odds: YES ${yes} percent, NO ${no} percent`}
+        aria-label={has ? `Implied odds: YES ${yes} percent, NO ${no} percent` : "No implied odds yet"}
       >
-        <div style={{ width: `${yes}%`, background: "var(--accent)" }} />
-        <div style={{ width: `${no}%`, background: "var(--muted)" }} />
+        <div style={{ width: `${yes}%`, background: has ? "var(--accent)" : "transparent" }} />
+        <div style={{ width: `${no}%`, background: has ? "var(--muted)" : "transparent" }} />
       </div>
       <div className="flex justify-between text-xs">
-        <span style={{ color: "var(--accent)" }}>YES {yes}%</span>
-        <span style={{ color: "var(--muted)" }}>NO {no}%</span>
+        <span style={{ color: has ? "var(--accent)" : "var(--muted)" }}>YES {has ? `${yes}%` : "—"}</span>
+        <span style={{ color: "var(--muted)" }}>NO {has ? `${no}%` : "—"}</span>
       </div>
     </div>
   );

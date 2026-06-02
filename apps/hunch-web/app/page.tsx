@@ -146,11 +146,9 @@ export default function HomePage() {
           return (
             <Link key={m.id} href={`/market?id=${encodeURIComponent(m.id)}`} className="market-card block rounded p-3">
               <div className="font-bold text-sm">{m.content.question}</div>
-              {book && (
-                <div className="mt-2">
-                  <OddsBar book={book} compact />
-                </div>
-              )}
+              <div className="mt-2">
+                <OddsBar book={book} compact />
+              </div>
               <div style={{ color: "var(--muted)" }} className="text-xs mt-2 flex gap-3 flex-wrap">
                 <span style={{ color: expired ? "var(--muted)" : "var(--accent)" }}>{expired ? "expired" : "open"}</span>
                 <span>oracle {m.oracle.slice(0, 12)}…</span>
