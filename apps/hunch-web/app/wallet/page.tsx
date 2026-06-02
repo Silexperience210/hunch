@@ -11,7 +11,9 @@ import { Alert, Button, Card, Input } from "@/components/ui";
 const SECRET_KEY = "hunch:wallet-secret";
 const MINT_KEY = "hunch:mint-url";
 const PROOFS_PREFIX = "hunch:proofs:";
-const DEFAULT_MINT = "https://mint-signet.21pay.org";
+const SIGNET_MINT = "https://mint-signet.21pay.org";
+const MAINNET_MINT = "https://mint-mainnet.21pay.org";
+const DEFAULT_MINT = SIGNET_MINT;
 
 const balanceKey = (mint: string) => `hunch:cashu:${mint}`;
 
@@ -78,6 +80,7 @@ export default function WalletPage() {
   const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState(false);
+  const [copied, setCopied] = useState("");
   const wallet = useRef<Wallet | null>(null);
   const quote = useRef<any>(null);
 
@@ -127,9 +130,11 @@ export default function WalletPage() {
     localStorage.setItem(MINT_KEY, m);
   }
 
-  async function copy(text: string, label: string) {
+  async function copy(text: string, label: string, id = label) {
     try {
       await copyText(text);
+      setCopied(id);
+      setTimeout(() => setCopied((c) => (c === id ? "" : c)), 1500);
       log(`✔ ${label} copied.`, "ok");
     } catch {
       log("Copy failed — select the text manually.", "error");
@@ -234,10 +239,23 @@ export default function WalletPage() {
         </p>
       </section>
 
+      {/* Network quick-switch — Signet (test sats) vs Mainnet (real sats). */}
+      <div className="flex gap-2 items-center text-sm">
+        <span className="text-xs" style={{ color: "var(--muted)" }}>network</span>
+        <Button size="sm" variant={mint === SIGNET_MINT ? "primary" : "secondary"} onClick={() => persistMint(SIGNET_MINT)}>
+          Signet (test)
+        </Button>
+        <Button size="sm" variant={mint === MAINNET_MINT ? "primary" : "secondary"} onClick={() => persistMint(MAINNET_MINT)}>
+          Mainnet (real sats)
+        </Button>
+      </div>
+
       {/* Balance + deposit / withdraw */}
       <Card className="flex flex-col gap-4 p-4">
         <div className="flex items-baseline justify-between">
-          <span className="text-xs" style={{ color: "var(--muted)" }}>balance ({mint.replace(/^https?:\/\//, "")})</span>
+          <span className="text-xs" style={{ color: "var(--muted)" }}>
+            balance · {mint === SIGNET_MINT ? "signet (test)" : mint === MAINNET_MINT ? "mainnet (real)" : mint.replace(/^https?:\/\//, "")}
+          </span>
           <span className="text-2xl font-bold" style={{ color: "var(--accent)" }}>{balSat} sat</span>
         </div>
 
@@ -255,7 +273,7 @@ export default function WalletPage() {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold">Lightning invoice</span>
                 {waiting && <span className="text-xs" style={{ color: "var(--accent)" }}>⏳ waiting for payment — auto-credits</span>}
-                <Button size="sm" onClick={() => copy(invoice, "Invoice")}>Copy</Button>
+                <Button size="sm" onClick={() => copy(invoice, "Invoice", "inv")}>{copied === "inv" ? "✓ Copied" : "Copy"}</Button>
                 <a href={`lightning:${invoice}`} className="field px-3 py-1 text-xs rounded">Open wallet</a>
               </div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -325,8 +343,8 @@ export default function WalletPage() {
             <span className="text-xs" style={{ color: "var(--muted)" }}>wallet key</span>
             <code className="text-xs break-all" style={{ color: "var(--accent)" }}>{pubkey || "—"}</code>
             <div className="flex gap-2 flex-wrap mt-1">
-              <Button size="sm" onClick={() => copy(secret, "Backup key")}>Copy backup key</Button>
-              <Button size="sm" onClick={() => copy(pubkey, "Pubkey")}>Copy pubkey</Button>
+              <Button size="sm" onClick={() => copy(secret, "Backup key", "bk")}>{copied === "bk" ? "✓ Copied" : "Copy backup key"}</Button>
+              <Button size="sm" onClick={() => copy(pubkey, "Pubkey", "pk")}>{copied === "pk" ? "✓ Copied" : "Copy pubkey"}</Button>
               <Button size="sm" onClick={regenerateKey}>New key</Button>
             </div>
             <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>
