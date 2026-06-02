@@ -14,7 +14,9 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use hunch_nostr::relay;
-use hunch_oracle::{generate_keypair, nonce_store::NonceStore, OracleService};
+use hunch_oracle::{
+    connectors::ResolutionSpec, generate_keypair, nonce_store::NonceStore, OracleService,
+};
 use hunch_protocol::outcome::Outcome;
 
 #[derive(Parser)]
@@ -59,6 +61,22 @@ enum Command {
         /// Resolved outcome: YES, NO, or INVALID.
         #[arg(long)]
         outcome: Outcome,
+    },
+    /// Resolve a market automatically via a connector spec, then publish the attestation.
+    ///
+    /// The spec is JSON (inline or `@path`) tagged by `connector`, e.g.:
+    ///   {"connector":"price","asset":"BTC","quote":"USD","op":">=","threshold":100000}
+    Resolve {
+        #[command(flatten)]
+        key: KeyArgs,
+        #[command(flatten)]
+        net: NetArgs,
+        /// Market identifier: `<creator_pubkey>:30888:<d>`.
+        #[arg(long)]
+        market: String,
+        /// Resolution spec as JSON, or `@path` to a JSON file.
+        #[arg(long)]
+        spec: String,
     },
 }
 
@@ -178,6 +196,37 @@ async fn main() -> Result<()> {
                 attestation.market, attestation.outcome, attestation.signature_hex
             );
             eprintln!("nonce R {} now locked to {}", nonce.pubkey, outcome);
+            broadcast(&net, &event).await?;
+        }
+        Command::Resolve {
+            key,
+            net,
+            market,
+            spec,
+        } => {
+            let oracle = key.oracle()?;
+            // Spec is inline JSON or @path to a file.
+            let spec_json = match spec.strip_prefix('@') {
+                Some(path) => std::fs::read_to_string(path)
+                    .with_context(|| format!("reading spec file {path}"))?,
+                None => spec,
+            };
+            let spec = ResolutionSpec::from_json(&spec_json).context("parsing resolution spec")?;
+            // Fetch the data and decide — auto-resolution.
+            let resolution = spec.resolve().await.context("connector resolution")?;
+            let outcome = resolution.outcome;
+            eprintln!("resolved {outcome}: {}", resolution.evidence);
+            // Same attest flow as `Attest`, but the outcome came from the connector.
+            let mut store = NonceStore::load(&net.nonce_store)?;
+            let nonce = store.nonce_for_attest(&market, outcome.as_str())?;
+            let created_at = now();
+            let (event, attestation) =
+                oracle.build_attestation_event(&market, outcome, &nonce.secret, created_at)?;
+            store.commit_attest(&market, outcome.as_str())?;
+            eprintln!(
+                "attestation: market={} outcome={} sig={}",
+                attestation.market, attestation.outcome, attestation.signature_hex
+            );
             broadcast(&net, &event).await?;
         }
     }

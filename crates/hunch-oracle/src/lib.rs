@@ -13,6 +13,7 @@
 //! - [`nonce_store`] — persistent per-market nonce store with reuse guard.
 //! - [`service`] — the oracle identity wiring the protocol types to signed events.
 
+pub mod connectors;
 pub mod nonce_store;
 pub mod service;
 
