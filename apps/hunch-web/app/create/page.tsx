@@ -6,7 +6,8 @@ import { buildMarketTemplate } from "@/lib/build";
 import { marketId } from "@/lib/hunch";
 import { getPublicKey, setSignerMode, signerMode, signTemplate, usingLocalSigner } from "@/lib/sign";
 import { setLocalSecret } from "@/lib/localSigner";
-import { clearBunker, connectBunker } from "@/lib/nip46";
+import { clearBunker, connectBunker, startNostrConnect } from "@/lib/nip46";
+import { copyText } from "@/lib/clipboard";
 import { publishAll } from "@/lib/publish";
 import { relaysFromUrl } from "@/lib/relay";
 import { Alert, Button, Card, Input, Select, Textarea } from "@/components/ui";
@@ -104,6 +105,7 @@ export default function CreateMarketPage() {
   const [hasExtension, setHasExtension] = useState(false);
   const [importNsec, setImportNsec] = useState("");
   const [bunkerUri, setBunkerUri] = useState("");
+  const [ncUri, setNcUri] = useState("");
   const refreshSigner = () => {
     setIsLocal(usingLocalSigner());
     setIsRemote(signerMode() === "nip46");
@@ -182,30 +184,62 @@ export default function CreateMarketPage() {
                 ? "No extension needed — key stored in this browser (back it up from Wallet). For stronger security, connect a remote signer:"
                 : "Or connect a remote signer (key stays in the app):"}
             </span>
-            <div className="flex gap-2">
-              <Input
-                className="flex-1"
-                value={bunkerUri}
-                onChange={(e) => setBunkerUri(e.target.value)}
-                placeholder="bunker://… (from Amber → Connect)"
-              />
+            <div className="flex flex-col gap-2">
               <Button
-                onClick={async () => {
-                  if (!bunkerUri.trim().startsWith("bunker://")) { setStatus("Error: paste a bunker:// URI from Amber."); return; }
-                  setStatus("Connecting to the remote signer — approve in Amber…");
-                  try {
-                    await connectBunker(bunkerUri.trim());
-                    setSignerMode("nip46");
-                    setBunkerUri("");
-                    refreshSigner();
-                    setStatus("✔ Remote signer connected (Amber/NIP-46).");
-                  } catch (e) {
-                    setStatus("Error: " + (e as Error).message);
-                  }
+                onClick={() => {
+                  const { uri, connected } = startNostrConnect();
+                  setNcUri(uri);
+                  setStatus("Open the link in Amber and approve the connection…");
+                  connected
+                    .then((pk) => {
+                      setSignerMode("nip46");
+                      setNcUri("");
+                      refreshSigner();
+                      setStatus(`✔ Remote signer connected: ${pk.slice(0, 16)}…`);
+                    })
+                    .catch((e) => setStatus("Error: " + (e as Error).message));
                 }}
               >
-                Connect Amber
+                Connect with Amber
               </Button>
+              {ncUri && (
+                <div className="flex flex-col gap-2 rounded p-2" style={{ border: "1px solid var(--border)" }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a href={ncUri} className="px-3 py-1 text-xs rounded font-bold" style={{ background: "var(--accent)", color: "#000" }}>
+                      Open in Amber
+                    </a>
+                    <Button size="sm" onClick={() => copyText(ncUri).then(() => setStatus("✔ Connect link copied."))}>
+                      Copy link
+                    </Button>
+                    <span className="text-xs" style={{ color: "var(--muted)" }}>waiting for approval…</span>
+                  </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img alt="nostrconnect QR" width={160} height={160} style={{ background: "#fff", padding: 8, borderRadius: 8, alignSelf: "flex-start" }} src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(ncUri)}`} />
+                </div>
+              )}
+              <details>
+                <summary className="text-xs cursor-pointer" style={{ color: "var(--muted)" }}>or paste a bunker:// URI</summary>
+                <div className="flex gap-2 mt-2">
+                  <Input className="flex-1" value={bunkerUri} onChange={(e) => setBunkerUri(e.target.value)} placeholder="bunker://…" />
+                  <Button
+                    onClick={async () => {
+                      if (!bunkerUri.trim().startsWith("bunker://")) { setStatus("Error: paste a bunker:// URI."); return; }
+                      setStatus("Connecting to the remote signer…");
+                      try {
+                        await connectBunker(bunkerUri.trim());
+                        setSignerMode("nip46");
+                        setBunkerUri("");
+                        refreshSigner();
+                        setStatus("✔ Remote signer connected (NIP-46).");
+                      } catch (e) {
+                        setStatus("Error: " + (e as Error).message);
+                      }
+                    }}
+                  >
+                    Connect
+                  </Button>
+                </div>
+              </details>
             </div>
           </div>
         )}
