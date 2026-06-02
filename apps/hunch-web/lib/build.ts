@@ -36,6 +36,18 @@ export interface MarketParams {
   resolutionSpec?: string;
 }
 
+/** Builds a NIP-09 deletion (kind:5) for a market — only valid when signed by its creator. */
+export function buildDeleteTemplate(creator: string, d: string): EventTemplate {
+  return {
+    kind: 5,
+    tags: [
+      ["a", `${KIND_MARKET}:${creator}:${d}`],
+      ["k", String(KIND_MARKET)],
+    ],
+    content: "market deleted by creator",
+  };
+}
+
 /** Builds the unsigned kind:30888 market event template. Outcomes are the HIP-2 canonical set. */
 export function buildMarketTemplate(p: MarketParams): EventTemplate {
   const refund = p.refundTimeout ?? p.expiry + SEVEN_DAYS;

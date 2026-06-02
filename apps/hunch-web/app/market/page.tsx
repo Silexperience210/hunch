@@ -23,11 +23,11 @@ import { relaysFromUrl, queryRelays } from "@/lib/relay";
 import { fetchAnnounce, fetchAttestation, fetchReputation } from "@/lib/oracle";
 import { fetchMintAnnounce } from "@/lib/mint";
 import { fetchDisputes } from "@/lib/disputes";
-import { buildDisputeTemplate, buildOrderTemplate, buildReputationTemplate } from "@/lib/build";
-import { signTemplate } from "@/lib/sign";
+import { buildDeleteTemplate, buildDisputeTemplate, buildOrderTemplate, buildReputationTemplate } from "@/lib/build";
+import { getPublicKey, signTemplate } from "@/lib/sign";
 import { publishAll } from "@/lib/publish";
 import { verifyEvent } from "@/lib/verify";
-import { Button, Card, Input, Select } from "@/components/ui";
+import { Alert, Button, Card, Input, Select } from "@/components/ui";
 
 function Column({ title, orders }: { title: string; orders: Order[] }) {
   return (
@@ -209,6 +209,9 @@ function MarketMeta({ id }: { id: string }) {
   const [settlement, setSettlement] = useState<OracleAttestation | null>(null);
   const [rep, setRep] = useState<ReputationSummary | null>(null);
   const [mintAnnounce, setMintAnnounce] = useState<MintAnnounce | null>(null);
+  const [isCreator, setIsCreator] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+  const [delMsg, setDelMsg] = useState<string | null>(null);
 
   // Reputation can be refreshed independently (after the user rates the oracle).
   const loadRep = useCallback(async (oracle: string) => {
@@ -227,6 +230,7 @@ function MarketMeta({ id }: { id: string }) {
       const m = events.filter(verifyEvent).map(parseMarketEvent).find((x): x is Market => x !== null && x.id === id);
       if (cancelled || !m) return;
       setMarket(m);
+      getPublicKey().then((pk) => { if (!cancelled) setIsCreator(pk === m.creator); }).catch(() => {});
       const [a, s, , mint] = await Promise.all([
         fetchAnnounce(relaysFromUrl(), m.oracle, m.id),
         fetchAttestation(relaysFromUrl(), m.oracle, m.id),
@@ -254,7 +258,30 @@ function MarketMeta({ id }: { id: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="font-bold">{market.content.question}</div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="font-bold">{market.content.question}</div>
+        {isCreator && !deleted && (
+          <Button
+            size="sm"
+            onClick={async () => {
+              if (!confirm("Delete this market? Publishes a NIP-09 deletion signed by you (the creator).")) return;
+              setDelMsg("Signing deletion…");
+              try {
+                const signed = await signTemplate(buildDeleteTemplate(market.creator, market.d));
+                const res = await publishAll(relaysFromUrl(), signed);
+                const ok = res.filter((r) => r.accepted).length;
+                setDeleted(true);
+                setDelMsg(`✔ Deletion published to ${ok}/${res.length} relay(s). It will disappear from the list.`);
+              } catch (e) {
+                setDelMsg("Error: " + (e as Error).message);
+              }
+            }}
+          >
+            Delete
+          </Button>
+        )}
+      </div>
+      {delMsg && <Alert kind={delMsg.startsWith("Error") ? "error" : delMsg.startsWith("✔") ? "ok" : "info"}>{delMsg}</Alert>}
       {settlement && <SettlementBanner s={settlement} />}
       <section className="flex flex-col gap-1 text-sm">
         <Row label="oracle" value={market.oracle} />
