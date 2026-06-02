@@ -7,7 +7,7 @@ import { marketId } from "@/lib/hunch";
 import { signTemplate } from "@/lib/sign";
 import { publishAll } from "@/lib/publish";
 import { relaysFromUrl } from "@/lib/relay";
-import { Alert, Button, Card, Input, Textarea } from "@/components/ui";
+import { Alert, Button, Card, Input, Select, Textarea } from "@/components/ui";
 
 // The 21pay oracle + mint running on the Umbrel — proposed by default so creating a market needs
 // only a question + a date. Advanced users can override with their own oracle/mint below.
@@ -35,9 +35,62 @@ export default function CreateMarketPage() {
   const [oracle, setOracle] = useState(DEFAULT_ORACLE);
   const [mint, setMint] = useState(DEFAULT_MINT);
   const [relays, setRelays] = useState(relaysFromUrl().join(", "));
-  const [resolutionSpec, setResolutionSpec] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Auto-resolution "rubrique" — friendly presets wired to a data source, so a creator never writes
+  // raw connector JSON. "manual" = the oracle decides by hand.
+  const [autoKind, setAutoKind] = useState<"manual" | "price" | "onchain" | "weather" | "http" | "custom">("manual");
+  const [op, setOp] = useState(">=");
+  const [threshold, setThreshold] = useState("");
+  const [asset, setAsset] = useState("BTC");
+  const [quote, setQuote] = useState("USD");
+  const [ocMetric, setOcMetric] = useState("block_height");
+  const [wLat, setWLat] = useState("");
+  const [wLon, setWLon] = useState("");
+  const [wDate, setWDate] = useState("");
+  const [wMetric, setWMetric] = useState("precipitation_sum");
+  const [hUrl, setHUrl] = useState("");
+  const [hPath, setHPath] = useState("");
+  const [customSpec, setCustomSpec] = useState("");
+
+  /** Assembles the chosen rubrique into a connector spec JSON string, or undefined for manual. */
+  function buildResolutionSpec(): string | undefined {
+    const th = Number(threshold);
+    const needTh = () => {
+      if (!threshold.trim() || !Number.isFinite(th)) throw new Error("Enter a numeric threshold for auto-resolution.");
+    };
+    switch (autoKind) {
+      case "manual":
+        return undefined;
+      case "price":
+        needTh();
+        return JSON.stringify({ connector: "price", asset: asset.trim() || "BTC", quote: quote.trim() || "USD", op, threshold: th });
+      case "onchain":
+        needTh();
+        return JSON.stringify({ connector: "onchain", metric: ocMetric, op, threshold: th });
+      case "weather": {
+        needTh();
+        const lat = Number(wLat), lon = Number(wLon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error("Enter numeric lat/lon for the weather market.");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(wDate.trim())) throw new Error("Enter the weather date as YYYY-MM-DD.");
+        return JSON.stringify({ connector: "weather", lat, lon, date: wDate.trim(), metric: wMetric, op, threshold: th });
+      }
+      case "http": {
+        needTh();
+        if (!hUrl.trim()) throw new Error("Enter the JSON API URL.");
+        const path = hPath.split(/[.,]/).map((s) => s.trim()).filter(Boolean);
+        if (path.length === 0) throw new Error("Enter the JSON path to the number (e.g. data.0.score).");
+        return JSON.stringify({ connector: "http", url: hUrl.trim(), path, op, threshold: th });
+      }
+      case "custom": {
+        const t = customSpec.trim();
+        if (!t) return undefined;
+        JSON.parse(t); // throws if invalid
+        return t;
+      }
+    }
+  }
 
   const slug = useMemo(() => `${slugify(question)}-${Math.floor(Date.now() / 1000) % 100000}`, [question]);
   const usingDefaultOracle = oracle.trim() === DEFAULT_ORACLE;
@@ -51,15 +104,7 @@ export default function CreateMarketPage() {
       if (!Number.isFinite(expiryTs)) throw new Error("Pick a close date.");
       if (!/^[0-9a-f]{64}$/i.test(oracle.trim())) throw new Error("Oracle must be a 64-char hex key.");
 
-      // Optional auto-resolution spec must be valid JSON if provided.
-      const specRaw = resolutionSpec.trim();
-      if (specRaw) {
-        try {
-          JSON.parse(specRaw);
-        } catch {
-          throw new Error("Auto-resolution spec must be valid JSON (or leave it empty).");
-        }
-      }
+      const resolutionSpec = buildResolutionSpec();
 
       const template = buildMarketTemplate({
         slug,
@@ -69,7 +114,7 @@ export default function CreateMarketPage() {
         dlcContract: PLACEHOLDER_DLC,
         expiry: expiryTs,
         resolution: resolution.trim(),
-        resolutionSpec: specRaw || undefined,
+        resolutionSpec,
       });
       const signed = await signTemplate(template);
       const id = marketId(signed.pubkey, slug);
@@ -122,6 +167,70 @@ export default function CreateMarketPage() {
         <Input type="datetime-local" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
       </label>
 
+      {/* Auto-resolution rubrique — pre-wired data sources so the oracle can settle automatically. */}
+      <Card className="flex flex-col gap-2 p-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-bold">Auto-resolution</span>
+          <Select value={autoKind} onChange={(e) => setAutoKind(e.target.value as typeof autoKind)}>
+            <option value="manual">Manual — the oracle decides by hand</option>
+            <option value="price">Crypto price (Coinbase + Kraken)</option>
+            <option value="onchain">Bitcoin on-chain (mempool.space)</option>
+            <option value="weather">Weather (open-meteo)</option>
+            <option value="http">Custom JSON API</option>
+            <option value="custom">Raw spec (advanced)</option>
+          </Select>
+        </label>
+
+        {autoKind === "price" && (
+          <div className="flex gap-2 flex-wrap items-end text-sm">
+            <label className="flex flex-col gap-1"><span className="text-xs">asset</span><Input className="w-24" value={asset} onChange={(e) => setAsset(e.target.value)} /></label>
+            <label className="flex flex-col gap-1"><span className="text-xs">quote</span><Input className="w-24" value={quote} onChange={(e) => setQuote(e.target.value)} /></label>
+            <label className="flex flex-col gap-1"><span className="text-xs">op</span><Select value={op} onChange={(e) => setOp(e.target.value)}><option>&gt;=</option><option>&gt;</option><option>&lt;=</option><option>&lt;</option></Select></label>
+            <label className="flex flex-col gap-1"><span className="text-xs">threshold (USD)</span><Input className="w-32" inputMode="decimal" placeholder="100000" value={threshold} onChange={(e) => setThreshold(e.target.value)} /></label>
+          </div>
+        )}
+
+        {autoKind === "onchain" && (
+          <div className="flex gap-2 flex-wrap items-end text-sm">
+            <label className="flex flex-col gap-1"><span className="text-xs">metric</span><Select value={ocMetric} onChange={(e) => setOcMetric(e.target.value)}><option value="block_height">block height</option><option value="mempool_count">mempool tx count</option><option value="fee_fastest">fastest fee (sat/vB)</option></Select></label>
+            <label className="flex flex-col gap-1"><span className="text-xs">op</span><Select value={op} onChange={(e) => setOp(e.target.value)}><option>&gt;=</option><option>&gt;</option><option>&lt;=</option><option>&lt;</option></Select></label>
+            <label className="flex flex-col gap-1"><span className="text-xs">threshold</span><Input className="w-32" inputMode="decimal" placeholder="900000" value={threshold} onChange={(e) => setThreshold(e.target.value)} /></label>
+          </div>
+        )}
+
+        {autoKind === "weather" && (
+          <div className="flex gap-2 flex-wrap items-end text-sm">
+            <label className="flex flex-col gap-1"><span className="text-xs">lat</span><Input className="w-24" value={wLat} onChange={(e) => setWLat(e.target.value)} placeholder="48.85" /></label>
+            <label className="flex flex-col gap-1"><span className="text-xs">lon</span><Input className="w-24" value={wLon} onChange={(e) => setWLon(e.target.value)} placeholder="2.35" /></label>
+            <label className="flex flex-col gap-1"><span className="text-xs">date</span><Input className="w-36" value={wDate} onChange={(e) => setWDate(e.target.value)} placeholder="2026-06-10" /></label>
+            <label className="flex flex-col gap-1"><span className="text-xs">metric</span><Select value={wMetric} onChange={(e) => setWMetric(e.target.value)}><option value="precipitation_sum">precipitation</option><option value="temperature_2m_max">max temp</option><option value="temperature_2m_min">min temp</option></Select></label>
+            <label className="flex flex-col gap-1"><span className="text-xs">op</span><Select value={op} onChange={(e) => setOp(e.target.value)}><option>&gt;=</option><option>&gt;</option><option>&lt;=</option><option>&lt;</option></Select></label>
+            <label className="flex flex-col gap-1"><span className="text-xs">threshold</span><Input className="w-24" inputMode="decimal" placeholder="0" value={threshold} onChange={(e) => setThreshold(e.target.value)} /></label>
+          </div>
+        )}
+
+        {autoKind === "http" && (
+          <div className="flex flex-col gap-2 text-sm">
+            <label className="flex flex-col gap-1"><span className="text-xs">JSON API URL</span><Input value={hUrl} onChange={(e) => setHUrl(e.target.value)} placeholder="https://api.example.com/score" /></label>
+            <div className="flex gap-2 flex-wrap items-end">
+              <label className="flex flex-col gap-1"><span className="text-xs">path to number</span><Input className="w-40" value={hPath} onChange={(e) => setHPath(e.target.value)} placeholder="data.0.score" /></label>
+              <label className="flex flex-col gap-1"><span className="text-xs">op</span><Select value={op} onChange={(e) => setOp(e.target.value)}><option>&gt;=</option><option>&gt;</option><option>&lt;=</option><option>&lt;</option></Select></label>
+              <label className="flex flex-col gap-1"><span className="text-xs">threshold</span><Input className="w-28" inputMode="decimal" value={threshold} onChange={(e) => setThreshold(e.target.value)} /></label>
+            </div>
+          </div>
+        )}
+
+        {autoKind === "custom" && (
+          <Textarea rows={2} placeholder={`{"connector":"price","asset":"BTC","op":">=","threshold":100000}`} value={customSpec} onChange={(e) => setCustomSpec(e.target.value)} />
+        )}
+
+        <span className="text-xs" style={{ color: "var(--muted)" }}>
+          {autoKind === "manual"
+            ? "The oracle resolves this market manually."
+            : "The oracle resolves automatically from this source at the deadline. Shown to bettors on the market page."}
+        </span>
+      </Card>
+
       <Card className="p-3 flex flex-col gap-1">
         <div className="text-sm">
           Oracle:{" "}
@@ -157,18 +266,6 @@ export default function CreateMarketPage() {
           <label className="flex flex-col gap-1">
             <span className="text-xs">Relays (comma-separated)</span>
             <Input value={relays} onChange={(e) => setRelays(e.target.value)} />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs">Auto-resolution spec (optional JSON)</span>
-            <Textarea
-              rows={2}
-              placeholder={`{"connector":"price","asset":"BTC","quote":"USD","op":">=","threshold":100000}`}
-              value={resolutionSpec}
-              onChange={(e) => setResolutionSpec(e.target.value)}
-            />
-            <span className="text-xs" style={{ color: "var(--muted)" }}>
-              If set, the oracle can resolve this market automatically (price / weather / onchain / http). Leave empty for manual resolution.
-            </span>
           </label>
         </Card>
       )}
