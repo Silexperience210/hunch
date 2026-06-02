@@ -5,13 +5,14 @@
 import type { EventTemplate } from "./build.ts";
 import type { NostrEvent } from "./hunch.ts";
 import { localPubkey, signLocally } from "./localSigner.ts";
+import { nip46Pubkey, nip46Sign } from "./nip46.ts";
 
 interface Nip07 {
   getPublicKey(): Promise<string>;
   signEvent(event: { kind: number; created_at: number; tags: string[][]; content: string }): Promise<NostrEvent>;
 }
 
-type SignerMode = "auto" | "nip07" | "local";
+type SignerMode = "auto" | "nip07" | "local" | "nip46";
 const MODE_KEY = "hunch:signer";
 
 function extension(): Nip07 | undefined {
@@ -31,17 +32,19 @@ export function setSignerMode(m: SignerMode) {
 export function usingLocalSigner(): boolean {
   const mode = signerMode();
   if (mode === "local") return true;
-  if (mode === "nip07") return false;
+  if (mode === "nip07" || mode === "nip46") return false;
   return !extension(); // auto: local only when there's no extension
 }
 
 export async function getPublicKey(): Promise<string> {
+  if (signerMode() === "nip46") return nip46Pubkey();
   if (usingLocalSigner()) return localPubkey();
   return extension()!.getPublicKey();
 }
 
-/** Signs a template via the active signer (NIP-07 extension, or the in-browser local key). */
+/** Signs a template via the active signer (NIP-07 extension, NIP-46 remote signer, or local key). */
 export async function signTemplate(t: EventTemplate): Promise<NostrEvent> {
+  if (signerMode() === "nip46") return nip46Sign(t);
   if (usingLocalSigner()) return signLocally(t);
   const n = extension();
   if (!n) throw new Error("No NIP-07 signer found — switch to the in-browser key.");

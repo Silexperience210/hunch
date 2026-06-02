@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { buildMarketTemplate } from "@/lib/build";
 import { marketId } from "@/lib/hunch";
-import { getPublicKey, setSignerMode, signTemplate, usingLocalSigner } from "@/lib/sign";
+import { getPublicKey, setSignerMode, signerMode, signTemplate, usingLocalSigner } from "@/lib/sign";
 import { setLocalSecret } from "@/lib/localSigner";
+import { clearBunker, connectBunker } from "@/lib/nip46";
 import { publishAll } from "@/lib/publish";
 import { relaysFromUrl } from "@/lib/relay";
 import { Alert, Button, Card, Input, Select, Textarea } from "@/components/ui";
@@ -99,10 +100,13 @@ export default function CreateMarketPage() {
   // Signing identity: extension (NIP-07) when present, else an in-browser key (works on mobile).
   const [signerPub, setSignerPub] = useState("");
   const [isLocal, setIsLocal] = useState(true);
+  const [isRemote, setIsRemote] = useState(false);
   const [hasExtension, setHasExtension] = useState(false);
   const [importNsec, setImportNsec] = useState("");
+  const [bunkerUri, setBunkerUri] = useState("");
   const refreshSigner = () => {
     setIsLocal(usingLocalSigner());
+    setIsRemote(signerMode() === "nip46");
     setHasExtension(!!(globalThis as { nostr?: unknown }).nostr);
     getPublicKey().then(setSignerPub).catch(() => setSignerPub(""));
   };
@@ -159,23 +163,51 @@ export default function CreateMarketPage() {
         <div className="flex items-center gap-2 flex-wrap text-xs">
           <span style={{ color: "var(--muted)" }}>signing as</span>
           <code className="break-all" style={{ color: "var(--accent)" }}>{signerPub ? `${signerPub.slice(0, 16)}…` : "…"}</code>
-          <span style={{ color: "var(--muted)" }}>· {isLocal ? "in-browser key" : "Nostr extension"}</span>
-          {hasExtension && (
-            <Button
-              size="sm"
-              onClick={() => {
-                setSignerMode(isLocal ? "nip07" : "local");
-                refreshSigner();
-              }}
-            >
+          <span style={{ color: "var(--muted)" }}>· {isRemote ? "remote signer (Amber/NIP-46)" : isLocal ? "in-browser key" : "Nostr extension"}</span>
+          {hasExtension && !isRemote && (
+            <Button size="sm" onClick={() => { setSignerMode(isLocal ? "nip07" : "local"); refreshSigner(); }}>
               {isLocal ? "use extension" : "use in-browser key"}
             </Button>
           )}
+          {isRemote && (
+            <Button size="sm" onClick={() => { clearBunker(); setSignerMode("auto"); refreshSigner(); }}>
+              disconnect signer
+            </Button>
+          )}
         </div>
-        {isLocal && (
-          <span className="text-xs" style={{ color: "var(--muted)" }}>
-            No extension needed — your key is stored in this browser. Back it up from the Wallet page.
-          </span>
+        {!isRemote && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs" style={{ color: "var(--muted)" }}>
+              {isLocal
+                ? "No extension needed — key stored in this browser (back it up from Wallet). For stronger security, connect a remote signer:"
+                : "Or connect a remote signer (key stays in the app):"}
+            </span>
+            <div className="flex gap-2">
+              <Input
+                className="flex-1"
+                value={bunkerUri}
+                onChange={(e) => setBunkerUri(e.target.value)}
+                placeholder="bunker://… (from Amber → Connect)"
+              />
+              <Button
+                onClick={async () => {
+                  if (!bunkerUri.trim().startsWith("bunker://")) { setStatus("Error: paste a bunker:// URI from Amber."); return; }
+                  setStatus("Connecting to the remote signer — approve in Amber…");
+                  try {
+                    await connectBunker(bunkerUri.trim());
+                    setSignerMode("nip46");
+                    setBunkerUri("");
+                    refreshSigner();
+                    setStatus("✔ Remote signer connected (Amber/NIP-46).");
+                  } catch (e) {
+                    setStatus("Error: " + (e as Error).message);
+                  }
+                }}
+              >
+                Connect Amber
+              </Button>
+            </div>
+          </div>
         )}
       </Card>
 
