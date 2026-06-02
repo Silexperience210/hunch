@@ -13,6 +13,8 @@ const field = { background: "var(--card)", border: "1px solid var(--border)", co
 const REFUND_LOCKTIME = Math.floor(Date.now() / 1000) + 90 * 24 * 3600; // 90 days
 // The 21pay oracle (runs on the Umbrel) — pre-filled so users don't paste a key. Override via ?oracle=.
 const DEFAULT_ORACLE = "b32187c658b01420003049758660e62e4a7dd3daefac42076cd1664adce0e335";
+// The Hunch relay (carries oracle announces/attestations) — always queried, even if the field differs.
+const HUNCH_RELAY = "wss://relay.21pay.org";
 
 function BetView() {
   const params = useSearchParams();
@@ -49,8 +51,11 @@ function BetView() {
 
   const bettorPub = secret ? safe(() => compressedPubkey(secret)) : "";
 
+  // Relays to query: whatever is in the field, but always including the 21pay relay where the
+  // Hunch oracle publishes its announces/attestations — so fetch works even if the field is stale.
   function relayList(): string[] {
-    return relays.split(",").map((s) => s.trim()).filter(Boolean);
+    const fromField = relays.split(",").map((s) => s.trim()).filter(Boolean);
+    return [...new Set([HUNCH_RELAY, ...fromField])];
   }
 
   // Auto-load the oracle nonce R on first render when it wasn't passed in the URL,
