@@ -93,6 +93,9 @@ enum Command {
         /// If set, loop forever, sleeping this many seconds between passes (else one pass).
         #[arg(long)]
         interval: Option<u64>,
+        /// Only process this market id (else all markets assigned to this oracle).
+        #[arg(long)]
+        market: Option<String>,
     },
 }
 
@@ -250,10 +253,11 @@ async fn main() -> Result<()> {
             net,
             limit,
             interval,
+            market,
         } => {
             let oracle = key.oracle()?;
             loop {
-                if let Err(e) = tick_once(&oracle, &net, limit).await {
+                if let Err(e) = tick_once(&oracle, &net, limit, market.as_deref()).await {
                     eprintln!("tick error: {e:#}");
                 }
                 match interval {
@@ -294,7 +298,12 @@ fn event_to_market(ev: &Value) -> Option<(String, Market)> {
 
 /// One daemon pass: announce this oracle's un-announced markets (so bettors can lock), then
 /// auto-resolve any that are past expiry and carry a `resolution_spec`.
-async fn tick_once(oracle: &OracleService, net: &NetArgs, limit: u64) -> Result<()> {
+async fn tick_once(
+    oracle: &OracleService,
+    net: &NetArgs,
+    limit: u64,
+    target: Option<&str>,
+) -> Result<()> {
     let relays = net.relay_list()?;
     let me = oracle.pubkey_hex();
     let filter = json!({ "kinds": [Market::KIND], "limit": limit });
@@ -311,6 +320,11 @@ async fn tick_once(oracle: &OracleService, net: &NetArgs, limit: u64) -> Result<
         };
         if market.oracle_pubkey != me {
             continue; // not our market
+        }
+        if let Some(t) = target {
+            if id != t {
+                continue; // --market filter: only this one
+            }
         }
 
         // 1) Announce early (idempotent) so bettors can lock to the committed nonce R.
