@@ -1,13 +1,13 @@
 "use client";
 
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { Wallet } from "@cashu/cashu-ts";
 import { compressedPubkey, outcomeLockKey, outcomeUnlockSecret, randomBettorSecret } from "@/lib/dlc";
 import { connect, depositQuote, mintLocked, payWithWebln, redeem, waitPaid } from "@/lib/wallet";
 import { fetchAnnounce, fetchAttestation } from "@/lib/oracle";
-import { DEFAULT_RELAYS } from "@/lib/relay";
+import { relaysFromUrl } from "@/lib/relay";
 
 const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
 const REFUND_LOCKTIME = Math.floor(Date.now() / 1000) + 90 * 24 * 3600; // 90 days
@@ -18,7 +18,7 @@ function BetView() {
   const [market, setMarket] = useState(params.get("id") ?? "");
   const [oracle, setOracle] = useState(params.get("oracle") ?? "");
   const [nonce, setNonce] = useState(params.get("nonce") ?? "");
-  const [relays, setRelays] = useState(DEFAULT_RELAYS.join(", "));
+  const [relays, setRelays] = useState(relaysFromUrl().join(", "));
   const [outcome, setOutcome] = useState<"YES" | "NO">("YES");
   const [amount, setAmount] = useState("100");
   const [secret, setSecret] = useState("");
@@ -49,6 +49,35 @@ function BetView() {
 
   function relayList(): string[] {
     return relays.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+
+  // Auto-load the oracle nonce R on first render when it wasn't passed in the URL,
+  // so users never have to paste it. Silent: failures just leave the field editable.
+  const autoTried = useRef(false);
+  useEffect(() => {
+    if (autoTried.current || nonce || !oracle.trim() || !market.trim()) return;
+    autoTried.current = true;
+    (async () => {
+      try {
+        const a = await fetchAnnounce(relayList(), oracle.trim(), market.trim());
+        if (a) {
+          setNonce(a.nonce);
+          log(`✔ Nonce auto-loaded from ${relayList()[0] ?? "relay"}.`);
+        }
+      } catch {
+        /* leave the field for manual entry */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function copyInvoice() {
+    try {
+      await navigator.clipboard.writeText(invoice);
+      log("✔ Invoice copied to clipboard.");
+    } catch {
+      log("Copy failed — select the invoice text manually.");
+    }
   }
 
   async function fetchNonce() {
@@ -166,8 +195,25 @@ function BetView() {
       </div>
 
       {invoice && (
-        <div className="text-xs break-all" style={{ color: "var(--muted)" }}>
-          invoice: {invoice}
+        <div className="flex flex-col gap-2 rounded p-3" style={{ border: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold">Lightning invoice</span>
+            <button onClick={copyInvoice} className="px-3 py-1 text-xs rounded" style={field}>
+              Copy
+            </button>
+            <a href={`lightning:${invoice}`} className="px-3 py-1 text-xs rounded" style={field}>
+              Open wallet
+            </a>
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            alt="invoice QR"
+            width={220}
+            height={220}
+            style={{ background: "#fff", padding: 8, borderRadius: 8, alignSelf: "flex-start" }}
+            src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(invoice.toUpperCase())}`}
+          />
+          <code className="text-xs break-all" style={{ color: "var(--muted)" }}>{invoice}</code>
         </div>
       )}
 
