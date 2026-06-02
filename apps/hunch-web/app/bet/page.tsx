@@ -7,7 +7,9 @@ import type { Wallet } from "@cashu/cashu-ts";
 import { compressedPubkey, outcomeLockKey, outcomeUnlockSecret, randomBettorSecret } from "@/lib/dlc";
 import { connect, depositQuote, mintLocked, payWithWebln, redeem, waitPaid } from "@/lib/wallet";
 import { fetchAnnounce, fetchAttestation } from "@/lib/oracle";
-import { relaysFromUrl } from "@/lib/relay";
+import { relaysFromUrl, queryRelays } from "@/lib/relay";
+import { KIND_MARKET, parseMarketEvent, type Market } from "@/lib/hunch";
+import { verifyEvent } from "@/lib/verify";
 
 const field = { background: "var(--card)", border: "1px solid var(--border)", color: "var(--fg)" } as const;
 const REFUND_LOCKTIME = Math.floor(Date.now() / 1000) + 90 * 24 * 3600; // 90 days
@@ -15,6 +17,9 @@ const REFUND_LOCKTIME = Math.floor(Date.now() / 1000) + 90 * 24 * 3600; // 90 da
 const DEFAULT_ORACLE = "b32187c658b01420003049758660e62e4a7dd3daefac42076cd1664adce0e335";
 // The Hunch relay (carries oracle announces/attestations) — always queried, even if the field differs.
 const HUNCH_RELAY = "wss://relay.21pay.org";
+
+type StatusKind = "info" | "ok" | "error";
+type Status = { msg: string; kind: StatusKind } | null;
 
 function BetView() {
   const params = useSearchParams();
@@ -28,22 +33,23 @@ function BetView() {
   const [secret, setSecret] = useState("");
   const [invoice, setInvoice] = useState("");
   const [attestationSig, setAttestationSig] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
+  const [question, setQuestion] = useState("");
+  const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState(false);
 
   const wallet = useRef<Wallet | null>(null);
   const quote = useRef<any>(null);
   const proofsKey = `hunch:proofs:${market}:${outcome}`;
 
-  function log(s: string) {
-    setStatus(s);
+  function log(msg: string, kind: StatusKind = "info") {
+    setStatus({ msg, kind });
   }
   async function guard(fn: () => Promise<void>) {
     setBusy(true);
     try {
       await fn();
     } catch (e) {
-      log("Error: " + (e as Error).message);
+      log("Error: " + (e as Error).message, "error");
     } finally {
       setBusy(false);
     }
@@ -83,7 +89,7 @@ function BetView() {
         const a = await fetchAnnounce(relayList(), oracle.trim(), market.trim());
         if (a) {
           setNonce(a.nonce);
-          log(`✔ Nonce auto-loaded from ${relayList()[0] ?? "relay"}.`);
+          log(`✔ Oracle nonce loaded — you're ready to deposit.`, "ok");
         }
       } catch {
         /* leave the field for manual entry */
@@ -92,12 +98,36 @@ function BetView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Pull the market question for context, so the bettor sees what they're betting on rather than a
+  // raw `creator:30888:slug` id. Silent: if it can't be fetched the page still works headlessly.
+  useEffect(() => {
+    if (!market.trim()) return;
+    let cancelled = false;
+    (async () => {
+      const [creator, , ...rest] = market.split(":");
+      const d = rest.join(":");
+      if (!creator || !d) return;
+      const events = await queryRelays(relayList(), { kinds: [KIND_MARKET], authors: [creator], "#d": [d], limit: 5 });
+      const m = events
+        .filter(verifyEvent)
+        .map(parseMarketEvent)
+        .find((x): x is Market => x !== null && x.id === market.trim());
+      if (!cancelled && m) setQuestion(m.content.question);
+    })().catch(() => {
+      /* leave the headless title */
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market]);
+
   async function copyInvoice() {
     try {
       await navigator.clipboard.writeText(invoice);
-      log("✔ Invoice copied to clipboard.");
+      log("✔ Invoice copied to clipboard.", "ok");
     } catch {
-      log("Copy failed — select the invoice text manually.");
+      log("Copy failed — select the invoice text manually.", "error");
     }
   }
 
@@ -108,7 +138,7 @@ function BetView() {
       const a = await fetchAnnounce(relayList(), oracle.trim(), market.trim());
       if (!a) throw new Error("No verified announce found for this oracle + market.");
       setNonce(a.nonce);
-      log(`✔ Nonce R = ${a.nonce.slice(0, 16)}… loaded from the oracle announce.`);
+      log(`✔ Nonce R = ${a.nonce.slice(0, 16)}… loaded from the oracle announce.`, "ok");
     });
   }
 
@@ -120,13 +150,16 @@ function BetView() {
       if (!a) throw new Error("No verified attestation found yet — the market may be unresolved.");
       setAttestationSig(a.signature);
       if (a.outcome === "YES" || a.outcome === "NO") setOutcome(a.outcome);
-      log(`✔ Settlement: oracle attested ${a.outcome}. Signature loaded — redeem if it matches your position.`);
+      log(`✔ Settlement: oracle attested ${a.outcome}. Signature loaded — redeem if it matches your position.`, "ok");
     });
   }
 
   async function deposit() {
     await guard(async () => {
       if (!secret) throw new Error("Generate a wallet key first.");
+      if (!market.trim()) throw new Error("No market selected — open this page from a market's “Bet →” link.");
+      if (!nonce.trim())
+        throw new Error("Oracle nonce R not loaded yet — the market may not be announced. Open “advanced” to fetch or enter it.");
       const B = compressedPubkey(secret);
       const lock = outcomeLockKey(B, oracle.trim(), nonce.trim(), market.trim(), outcome);
       const w = await connect(mintUrl.trim());
@@ -134,7 +167,7 @@ function BetView() {
       const { quote: q, invoice: inv } = await depositQuote(w, Number(amount));
       quote.current = q;
       setInvoice(inv);
-      log(`Lock L_${outcome} = ${lock.slice(0, 16)}…  Pay the invoice, then "Pay & mint".`);
+      log(`Lightning invoice ready — pay it, then click “Pay & mint”. (locked to L_${outcome} = ${lock.slice(0, 12)}…)`);
     });
   }
 
@@ -152,7 +185,7 @@ function BetView() {
       const lock = outcomeLockKey(B, oracle.trim(), nonce.trim(), market.trim(), outcome);
       const proofs = await mintLocked(w, Number(amount), quote.current, lock, B, REFUND_LOCKTIME);
       localStorage.setItem(proofsKey, JSON.stringify(proofs));
-      log(`✔ Minted ${proofs.length} ${outcome} proof(s), locked to the oracle outcome. Saved locally.`);
+      log(`✔ Bet placed — minted ${proofs.length} ${outcome} token(s), locked to the oracle outcome and saved in this browser.`, "ok");
     });
   }
 
@@ -165,65 +198,65 @@ function BetView() {
       const spend = outcomeUnlockSecret(secret, attestationSig.trim());
       const fresh = await redeem(w, JSON.parse(raw), spend);
       const total = fresh.reduce((s: number, p: any) => s + p.amount, 0);
-      log(`✔ Redeemed! ${total} sat of unlocked proofs. The outcome resolved ${outcome}.`);
+      log(`✔ Redeemed ${total} sat — the outcome resolved ${outcome} and your tokens are unlocked.`, "ok");
     });
   }
 
+  const sideButton = (value: "YES" | "NO") => {
+    const selected = outcome === value;
+    return (
+      <button
+        key={value}
+        onClick={() => setOutcome(value)}
+        className="flex-1 px-4 py-3 rounded font-bold text-sm"
+        style={selected ? { background: "var(--accent)", color: "#000" } : field}
+        aria-pressed={selected}
+      >
+        {value}
+      </button>
+    );
+  };
+
   return (
-    <div className="flex flex-col gap-3 max-w-2xl">
+    <div className="flex flex-col gap-5 max-w-2xl">
       <Link href="/" className="text-sm">← markets</Link>
-      <h1 className="font-bold">Bet (mint conditional tokens)</h1>
-      <p style={{ color: "var(--muted)" }} className="text-xs">
-        Mints Cashu tokens locked to the oracle outcome (NUT-11 P2PK to L = B + S_X). Spendable only
-        if the oracle attests your outcome; reclaimable after the refund timeout. Your wallet key
-        stays in this browser.
-      </p>
 
-      <div className="flex gap-2 items-center">
-        <span style={{ color: "var(--muted)" }} className="text-xs break-all">
-          {bettorPub ? `wallet ${bettorPub.slice(0, 16)}… (saved in this browser)` : "creating wallet…"}
-        </span>
-        <button
-          onClick={() => {
-            const s = randomBettorSecret();
-            localStorage.setItem("hunch:wallet-secret", s);
-            setSecret(s);
-            log("New wallet key generated (old tokens stay under the previous key).");
-          }}
-          className="px-2 py-1 text-xs rounded"
-          style={field}
-          title="Generate a fresh wallet key"
-        >
-          new key
-        </button>
+      <div className="flex flex-col gap-1">
+        <h1 className="font-bold text-lg">{question || "Place a bet"}</h1>
+        <p style={{ color: "var(--muted)" }} className="text-xs">
+          Pick a side, deposit sats over Lightning, and mint Cashu tokens that pay out only if the
+          oracle attests your outcome (reclaimable after the refund timeout). No custody — your wallet
+          key stays in this browser.
+        </p>
       </div>
 
-      <input style={field} className="px-3 py-2 text-sm rounded" placeholder="mint url" value={mintUrl} onChange={(e) => setMintUrl(e.target.value)} />
-      <input style={field} className="px-3 py-2 text-sm rounded" placeholder="market id (creator:30888:slug)" value={market} onChange={(e) => setMarket(e.target.value)} />
-      <input style={field} className="px-3 py-2 text-sm rounded" placeholder="oracle pubkey (x-only hex)" value={oracle} onChange={(e) => setOracle(e.target.value)} />
-      <input style={field} className="px-3 py-2 text-sm rounded" placeholder="relays (comma-separated)" value={relays} onChange={(e) => setRelays(e.target.value)} />
-      <div className="flex gap-2">
-        <input style={field} className="px-3 py-2 text-sm rounded flex-1" placeholder="oracle nonce R (x-only hex, from the kind:88 announce)" value={nonce} onChange={(e) => setNonce(e.target.value)} />
-        <button onClick={fetchNonce} disabled={busy} className="px-3 py-2 text-sm rounded whitespace-nowrap" style={field}>
-          fetch
-        </button>
-      </div>
-      <div className="flex gap-2">
-        <select style={field} className="px-2 py-2 text-sm rounded" value={outcome} onChange={(e) => setOutcome(e.target.value as "YES" | "NO")}>
-          <option value="YES">YES</option>
-          <option value="NO">NO</option>
-        </select>
-        <input style={field} className="px-3 py-2 text-sm rounded w-32" placeholder="amount sat" value={amount} onChange={(e) => setAmount(e.target.value)} />
-      </div>
+      {/* 1 · pick a side + stake */}
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
+          <span style={{ color: "var(--muted)" }} className="text-xs">your side</span>
+          <div className="flex gap-2">{sideButton("YES")}{sideButton("NO")}</div>
+        </div>
+        <label className="flex flex-col gap-2">
+          <span style={{ color: "var(--muted)" }} className="text-xs">stake</span>
+          <div className="flex items-center gap-2">
+            <input style={field} className="px-3 py-2 text-sm rounded w-32" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <span style={{ color: "var(--muted)" }} className="text-sm">sat</span>
+          </div>
+        </label>
+      </section>
 
-      <div className="flex gap-2 flex-wrap">
-        <button onClick={deposit} disabled={busy} className="px-4 py-2 text-sm rounded font-bold" style={{ background: "var(--accent)", color: "#000" }}>
-          1. Deposit
-        </button>
-        <button onClick={payAndMint} disabled={busy || !invoice} className="px-4 py-2 text-sm rounded font-bold" style={field}>
-          2. Pay & mint
-        </button>
-      </div>
+      {/* 2 · deposit & mint */}
+      <section className="flex flex-col gap-2">
+        <span style={{ color: "var(--muted)" }} className="text-xs">deposit &amp; mint</span>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={deposit} disabled={busy} className="px-4 py-2 text-sm rounded font-bold" style={{ background: "var(--accent)", color: "#000" }}>
+            1. Deposit
+          </button>
+          <button onClick={payAndMint} disabled={busy || !invoice} className="px-4 py-2 text-sm rounded font-bold" style={field}>
+            2. Pay &amp; mint
+          </button>
+        </div>
+      </section>
 
       {invoice && (
         <div className="flex flex-col gap-2 rounded p-3" style={{ border: "1px solid var(--border)" }}>
@@ -248,20 +281,78 @@ function BetView() {
         </div>
       )}
 
-      <section className="flex flex-col gap-2" style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-        <div className="font-bold text-sm">Redeem after settlement</div>
-        <div className="flex gap-2">
-          <input style={field} className="px-3 py-2 text-sm rounded flex-1" placeholder="oracle attestation signature (kind:89 sig hex)" value={attestationSig} onChange={(e) => setAttestationSig(e.target.value)} />
-          <button onClick={fetchAtt} disabled={busy} className="px-3 py-2 text-sm rounded whitespace-nowrap" style={field}>
-            fetch
+      {/* 3 · redeem after settlement */}
+      <section className="flex flex-col gap-2" style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+        <span style={{ color: "var(--muted)" }} className="text-xs">after settlement</span>
+        <div className="font-bold text-sm">Redeem your winnings</div>
+        <p style={{ color: "var(--muted)" }} className="text-xs">
+          Once the oracle attests, the signature loads automatically. Redeem if {outcome} won (or after
+          the refund timeout if the market resolved INVALID).
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={fetchAtt} disabled={busy} className="px-4 py-2 text-sm rounded font-bold" style={field}>
+            Check settlement
+          </button>
+          <button onClick={doRedeem} disabled={busy} className="px-4 py-2 text-sm rounded font-bold" style={{ background: "var(--accent)", color: "#000" }}>
+            Redeem
           </button>
         </div>
-        <button onClick={doRedeem} disabled={busy} className="self-start px-4 py-2 text-sm rounded font-bold" style={{ background: "var(--accent)", color: "#000" }}>
-          Redeem
-        </button>
       </section>
 
-      {status && <p className="text-xs break-all" style={{ color: "var(--muted)" }}>{status}</p>}
+      {/* Protocol knobs — pre-filled with the 21pay defaults, hidden so the page reads like a bet. */}
+      <details className="rounded p-3" style={{ border: "1px solid var(--border)" }}>
+        <summary className="text-xs cursor-pointer" style={{ color: "var(--muted)" }}>
+          advanced — mint, oracle, relays, nonce, signature, wallet key
+        </summary>
+        <div className="flex flex-col gap-2 mt-3">
+          <div className="flex gap-2 items-center">
+            <span style={{ color: "var(--muted)" }} className="text-xs break-all">
+              {bettorPub ? `wallet ${bettorPub.slice(0, 16)}… (saved in this browser)` : "creating wallet…"}
+            </span>
+            <button
+              onClick={() => {
+                const s = randomBettorSecret();
+                localStorage.setItem("hunch:wallet-secret", s);
+                setSecret(s);
+                log("New wallet key generated (old tokens stay under the previous key).");
+              }}
+              className="px-2 py-1 text-xs rounded"
+              style={field}
+              title="Generate a fresh wallet key"
+            >
+              new key
+            </button>
+          </div>
+          <input style={field} className="px-3 py-2 text-sm rounded" placeholder="mint url" value={mintUrl} onChange={(e) => setMintUrl(e.target.value)} />
+          <input style={field} className="px-3 py-2 text-sm rounded" placeholder="market id (creator:30888:slug)" value={market} onChange={(e) => setMarket(e.target.value)} />
+          <input style={field} className="px-3 py-2 text-sm rounded" placeholder="oracle pubkey (x-only hex)" value={oracle} onChange={(e) => setOracle(e.target.value)} />
+          <input style={field} className="px-3 py-2 text-sm rounded" placeholder="relays (comma-separated)" value={relays} onChange={(e) => setRelays(e.target.value)} />
+          <div className="flex gap-2">
+            <input style={field} className="px-3 py-2 text-sm rounded flex-1" placeholder="oracle nonce R (x-only hex, from the kind:88 announce)" value={nonce} onChange={(e) => setNonce(e.target.value)} />
+            <button onClick={fetchNonce} disabled={busy} className="px-3 py-2 text-sm rounded whitespace-nowrap" style={field}>
+              fetch
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <input style={field} className="px-3 py-2 text-sm rounded flex-1" placeholder="oracle attestation signature (kind:89 sig hex)" value={attestationSig} onChange={(e) => setAttestationSig(e.target.value)} />
+            <button onClick={fetchAtt} disabled={busy} className="px-3 py-2 text-sm rounded whitespace-nowrap" style={field}>
+              fetch
+            </button>
+          </div>
+        </div>
+      </details>
+
+      {status && (
+        <p
+          className="text-xs break-all rounded px-3 py-2"
+          style={{
+            border: `1px solid ${status.kind === "error" ? "var(--error)" : status.kind === "ok" ? "var(--accent)" : "var(--border)"}`,
+            color: status.kind === "error" ? "var(--error)" : status.kind === "ok" ? "var(--accent)" : "var(--muted)",
+          }}
+        >
+          {status.msg}
+        </p>
+      )}
     </div>
   );
 }
