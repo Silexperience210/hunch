@@ -2,14 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { parseMarketEvent, type Market, KIND_MARKET } from "@/lib/hunch";
+import { parseMarketEvent, parseOrderEvent, type Market, type Order, KIND_MARKET, KIND_ORDER } from "@/lib/hunch";
+import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
 import { queryRelays, relaysFromUrl } from "@/lib/relay";
 import { verifyEvent } from "@/lib/verify";
+import { OddsBar } from "@/components/OddsBar";
 
 type StateFilter = "all" | "open" | "expired";
 
 export default function HomePage() {
   const [markets, setMarkets] = useState<Market[]>([]);
+  const [books, setBooks] = useState<Map<string, OrderBook>>(new Map());
   const [status, setStatus] = useState<string>("Loading…");
   const [relays] = useState<string[]>(relaysFromUrl);
 
@@ -20,9 +23,13 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const events = await queryRelays(relays, { kinds: [KIND_MARKET], limit: 200 });
+      // Markets (kind 30888) and orders (kind 38888) in parallel — orders drive the implied-odds bar.
+      const [marketEvents, orderEvents] = await Promise.all([
+        queryRelays(relays, { kinds: [KIND_MARKET], limit: 200 }),
+        queryRelays(relays, { kinds: [KIND_ORDER], limit: 500 }),
+      ]);
       const seen = new Set<string>();
-      const parsed = events
+      const parsed = marketEvents
         .filter(verifyEvent)
         .map(parseMarketEvent)
         .filter((m): m is Market => m !== null)
@@ -31,8 +38,21 @@ export default function HomePage() {
           seen.add(m.id);
           return true;
         });
+
+      // Bucket verified orders by market, then build a display book per market.
+      const byMarket = new Map<string, Order[]>();
+      for (const o of orderEvents.filter(verifyEvent).map(parseOrderEvent)) {
+        if (!o) continue;
+        const list = byMarket.get(o.market);
+        if (list) list.push(o);
+        else byMarket.set(o.market, [o]);
+      }
+      const nextBooks = new Map<string, OrderBook>();
+      for (const [mid, orders] of byMarket) nextBooks.set(mid, buildOrderBook(orders, mid));
+
       if (!cancelled) {
         setMarkets(parsed);
+        setBooks(nextBooks);
         setStatus(parsed.length ? "" : "No markets found yet.");
       }
     })();
@@ -122,6 +142,7 @@ export default function HomePage() {
       <div className="flex flex-col gap-3">
         {filtered.map((m) => {
           const expired = m.expiry <= now;
+          const book = books.get(m.id);
           return (
             <Link
               key={m.id}
@@ -130,7 +151,12 @@ export default function HomePage() {
               style={{ border: "1px solid var(--border)" }}
             >
               <div className="font-bold text-sm">{m.content.question}</div>
-              <div style={{ color: "var(--muted)" }} className="text-xs mt-1 flex gap-3 flex-wrap">
+              {book && (
+                <div className="mt-2">
+                  <OddsBar book={book} compact />
+                </div>
+              )}
+              <div style={{ color: "var(--muted)" }} className="text-xs mt-2 flex gap-3 flex-wrap">
                 <span style={{ color: expired ? "var(--muted)" : "var(--accent)" }}>{expired ? "expired" : "open"}</span>
                 <span>oracle {m.oracle.slice(0, 12)}…</span>
                 <span>expiry {new Date(m.expiry * 1000).toISOString().slice(0, 10)}</span>

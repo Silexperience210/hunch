@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { buildOrderBook } from "./orderbook.ts";
+import { buildOrderBook, impliedOdds } from "./orderbook.ts";
 import type { Order } from "./hunch.ts";
 
 function o(side: "YES" | "NO", kind: "bid" | "ask", price: number, market = "m"): Order {
@@ -32,4 +32,22 @@ test("empty book has no best prices", () => {
   const book = buildOrderBook([]);
   assert.strictEqual(book.bestYesBid, undefined);
   assert.strictEqual(book.yesBids.length, 0);
+});
+
+test("impliedOdds splits the best YES/NO bids and sums to 100", () => {
+  const book = buildOrderBook([o("YES", "bid", 72), o("NO", "bid", 27)]);
+  const odds = impliedOdds(book);
+  assert.deepStrictEqual(odds, { yes: 73, no: 27 }); // 72/(72+27)=0.727 → 73
+  assert.strictEqual(odds!.yes + odds!.no, 100);
+});
+
+test("impliedOdds uses only the best bid on each side", () => {
+  const book = buildOrderBook([o("YES", "bid", 40), o("YES", "bid", 60), o("NO", "bid", 40)]);
+  assert.deepStrictEqual(impliedOdds(book), { yes: 60, no: 40 }); // 60/(60+40)
+});
+
+test("impliedOdds is null without two-sided demand", () => {
+  assert.strictEqual(impliedOdds(buildOrderBook([o("YES", "bid", 50)])), null);
+  assert.strictEqual(impliedOdds(buildOrderBook([o("YES", "ask", 50), o("NO", "ask", 50)])), null);
+  assert.strictEqual(impliedOdds(buildOrderBook([])), null);
 });

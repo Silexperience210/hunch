@@ -18,6 +18,7 @@ import {
   type ReputationSummary,
 } from "@/lib/hunch";
 import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
+import { OddsBar } from "@/components/OddsBar";
 import { relaysFromUrl, queryRelays } from "@/lib/relay";
 import { fetchAnnounce, fetchAttestation, fetchReputation } from "@/lib/oracle";
 import { fetchMintAnnounce } from "@/lib/mint";
@@ -413,6 +414,15 @@ function MarketView() {
       </div>
 
       {id && <MarketMeta id={id} />}
+
+      {book && (
+        <section className="flex flex-col gap-1">
+          <div className="text-xs" style={{ color: "var(--muted)" }}>
+            implied odds (from the order book)
+          </div>
+          <OddsBar book={book} />
+        </section>
+      )}
 
       <button
         onClick={load}

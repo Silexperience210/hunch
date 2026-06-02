@@ -40,3 +40,31 @@ export function buildOrderBook(orders: Order[], market?: string): OrderBook {
     bestNoAsk: noAsks[0]?.price,
   };
 }
+
+export interface ImpliedOdds {
+  /** Implied P(YES) as an integer percent, 0..100. */
+  yes: number;
+  /** Implied P(NO) as an integer percent; `yes + no === 100` by construction. */
+  no: number;
+}
+
+/**
+ * Implied probability of each outcome, derived from the best demand (bid) on each side.
+ *
+ * Mirrors the `hunch-matcher` complementary-pair economics: a YES bid at price `pY` and a NO bid at
+ * price `pN` can be matched into a freshly minted YES/NO pair once `pY + pN >= face_value`, so at the
+ * margin the two bids partition the face value — i.e. `P(YES) = pY / (pY + pN)`. This is
+ * self-normalizing and needs no face value (HIP-1 markets don't carry one).
+ *
+ * Returns null when either side lacks a bid: with one-sided demand there's no implied probability to
+ * show (the market hasn't been priced against its complement yet).
+ */
+export function impliedOdds(book: OrderBook): ImpliedOdds | null {
+  const y = book.bestYesBid;
+  const n = book.bestNoBid;
+  if (y === undefined || n === undefined) return null;
+  const total = y + n;
+  if (total <= 0) return null;
+  const yes = Math.round((y / total) * 100);
+  return { yes, no: 100 - yes };
+}
