@@ -20,6 +20,7 @@ import {
 import { buildOrderBook, impliedOdds, type OrderBook } from "@/lib/orderbook";
 import { OddsBar } from "@/components/OddsBar";
 import { AmmPanel } from "@/components/AmmPanel";
+import { ShareButton } from "@/components/ShareButton";
 import { relaysFromUrl, queryRelays } from "@/lib/relay";
 import { fetchAnnounce, fetchAttestation, fetchReputation } from "@/lib/oracle";
 import { fetchMintAnnounce } from "@/lib/mint";
@@ -321,13 +322,23 @@ function MarketMeta({ id, anchorProb }: { id: string; anchorProb: number }) {
       {!settlement && (
         <AmmPanel anchorProb={anchorProb} href={(side, amount) => betHref(market, announce, { side, amount })} />
       )}
-      <Link
-        href={betHref(market, announce)}
-        className="self-start text-sm px-4 py-2 rounded font-bold"
-        style={{ background: "var(--accent)", color: "#000" }}
-      >
-        Bet (advanced) →
-      </Link>
+      <div className="flex items-center gap-3 flex-wrap">
+        <Link
+          href={betHref(market, announce)}
+          className="text-sm px-4 py-2 rounded font-bold"
+          style={{ background: "var(--accent)", color: "#000" }}
+        >
+          Bet (advanced) →
+        </Link>
+        <ShareButton
+          share={{
+            question: market.content.question,
+            id: market.id,
+            yes: settlement ? undefined : Math.round(anchorProb * 100),
+            settled: settlement ? { outcome: settlement.outcome } : null,
+          }}
+        />
+      </div>
       <Disputes market={market.id} attestationId={settlement?.eventId} />
     </div>
   );

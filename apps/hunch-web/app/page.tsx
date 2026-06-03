@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { parseMarketEvent, parseOrderEvent, parseAttestationEvent, type Market, type Order, KIND_MARKET, KIND_ORDER, KIND_ORACLE_ATTESTATION } from "@/lib/hunch";
-import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
+import { buildOrderBook, impliedOdds, type OrderBook } from "@/lib/orderbook";
 import { queryRelays, relaysFromUrl } from "@/lib/relay";
 import { verifyEvent } from "@/lib/verify";
 import { OddsBar } from "@/components/OddsBar";
+import { ShareButton } from "@/components/ShareButton";
 import { Input, Select } from "@/components/ui";
 
 type StateFilter = "live" | "open" | "resolved" | "all";
@@ -196,42 +197,47 @@ export default function HomePage() {
           const book = books.get(m.id);
           const acts = activity.get(m.id) ?? 0;
           const hot = acts > 0 && i === 0; // most active = first (sorted by activity)
+          const s = settled.get(m.id);
+          const yes = !s && book ? (impliedOdds(book)?.yes ?? null) : null;
           return (
-            <Link
+            <div
               key={m.id}
-              href={`/market?id=${encodeURIComponent(m.id)}`}
               className="market-card block rounded p-3"
               style={hot ? { borderColor: "var(--accent)" } : undefined}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="font-bold text-sm">{m.content.question}</div>
-                {acts > 0 && (
-                  <span className="text-xs whitespace-nowrap" style={{ color: "var(--accent)" }}>
-                    🔥 {acts} order{acts === 1 ? "" : "s"}
-                  </span>
-                )}
-              </div>
-              <div className="mt-2">
-                <OddsBar book={book} compact />
-              </div>
-              <div style={{ color: "var(--muted)" }} className="text-xs mt-2 flex gap-3 flex-wrap">
-                {hot && <span style={{ color: "var(--accent)" }}>most active</span>}
-                {(() => {
-                  const s = settled.get(m.id);
-                  return s ? (
+              <Link href={`/market?id=${encodeURIComponent(m.id)}`} className="block">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-bold text-sm">{m.content.question}</div>
+                  {acts > 0 && (
+                    <span className="text-xs whitespace-nowrap" style={{ color: "var(--accent)" }}>
+                      🔥 {acts} order{acts === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2">
+                  <OddsBar book={book} compact />
+                </div>
+                <div style={{ color: "var(--muted)" }} className="text-xs mt-2 flex gap-3 flex-wrap">
+                  {hot && <span style={{ color: "var(--accent)" }}>most active</span>}
+                  {s ? (
                     <span style={{ color: "var(--accent)" }}>settled: {s.outcome}</span>
                   ) : (
                     <span style={{ color: expired ? "var(--muted)" : "var(--accent)" }}>{expired ? "expired" : "open"}</span>
-                  );
-                })()}
-                <span>oracle {m.oracle.slice(0, 12)}…</span>
-                <span>expiry {new Date(m.expiry * 1000).toISOString().slice(0, 10)}</span>
-                {m.category && <span>· {m.category}</span>}
-                {m.topics.map((t) => (
-                  <span key={t}>#{t}</span>
-                ))}
+                  )}
+                  <span>oracle {m.oracle.slice(0, 12)}…</span>
+                  <span>expiry {new Date(m.expiry * 1000).toISOString().slice(0, 10)}</span>
+                  {m.category && <span>· {m.category}</span>}
+                  {m.topics.map((t) => (
+                    <span key={t}>#{t}</span>
+                  ))}
+                </div>
+              </Link>
+              <div className="mt-2">
+                <ShareButton
+                  share={{ question: m.content.question, id: m.id, yes, settled: s ? { outcome: s.outcome } : null }}
+                />
               </div>
-            </Link>
+            </div>
           );
         })}
       </div>

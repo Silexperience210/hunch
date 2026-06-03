@@ -10,6 +10,7 @@ import { clearBunker, connectBunker, startNostrConnect } from "@/lib/nip46";
 import { copyText } from "@/lib/clipboard";
 import { publishAll } from "@/lib/publish";
 import { relaysFromUrl } from "@/lib/relay";
+import { buildShareNote, BROADCAST_RELAYS } from "@/lib/share";
 import { Alert, Button, Card, Input, Select, Textarea } from "@/components/ui";
 
 // The 21pay oracle + mint running on the Umbrel — proposed by default so creating a market needs
@@ -57,6 +58,7 @@ export default function CreateMarketPage() {
   const [hPath, setHPath] = useState("");
   const [llmCriteria, setLlmCriteria] = useState("");
   const [llmProvider, setLlmProvider] = useState("default");
+  const [announce, setAnnounce] = useState(true);
   const [customSpec, setCustomSpec] = useState("");
 
   /** Assembles the chosen rubrique into a connector spec JSON string, or undefined for manual. */
@@ -153,7 +155,18 @@ export default function CreateMarketPage() {
       const results = await publishAll(relayList, signed);
       const ok = results.filter((r) => r.accepted).length;
       if (ok === 0) throw new Error("No relay accepted the market. Check the relay URL.");
-      setStatus(`✔ Published to ${ok}/${results.length} relay(s). Market id: ${id}`);
+      let extra = "";
+      if (announce) {
+        // Broadcast a standard kind:1 note (signed by the creator) so the market spreads on Nostr.
+        try {
+          const note = await signTemplate(buildShareNote({ question: question.trim(), id, yes: null }));
+          const nRes = await publishAll(BROADCAST_RELAYS, note);
+          extra = ` · announced on Nostr (${nRes.filter((r) => r.accepted).length}/${nRes.length} relays)`;
+        } catch (e) {
+          extra = ` · announce failed: ${(e as Error).message}`;
+        }
+      }
+      setStatus(`✔ Published to ${ok}/${results.length} relay(s). Market id: ${id}${extra}`);
     } catch (e) {
       setStatus("Error: " + (e as Error).message);
     } finally {
@@ -431,6 +444,11 @@ export default function CreateMarketPage() {
           </label>
         </Card>
       )}
+
+      <label className="flex items-center gap-2 text-sm" style={{ color: "var(--muted)" }}>
+        <input type="checkbox" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} />
+        Announce on Nostr — also post a public note (signed by you) so the market spreads to every client
+      </label>
 
       <Button variant="primary" className="self-start" onClick={submit} disabled={busy}>
         {busy ? "Signing…" : "Sign & publish"}
