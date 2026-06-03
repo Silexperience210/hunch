@@ -14,6 +14,8 @@ import { Alert, Button, Card, Input } from "@/components/ui";
 import { copyText } from "@/lib/clipboard";
 
 const REFUND_LOCKTIME = Math.floor(Date.now() / 1000) + 90 * 24 * 3600; // 90 days
+const SIGNET_MINT = "https://mint-signet.21pay.org";
+const MAINNET_MINT = "https://mint-mainnet.21pay.org";
 // The 21pay oracle (runs on the Umbrel) — pre-filled so users don't paste a key. Override via ?oracle=.
 const DEFAULT_ORACLE = "b32187c658b01420003049758660e62e4a7dd3daefac42076cd1664adce0e335";
 // The Hunch relay (carries oracle announces/attestations) — always queried, even if the field differs.
@@ -24,7 +26,7 @@ type Status = { msg: string; kind: StatusKind } | null;
 
 function BetView() {
   const params = useSearchParams();
-  const [mintUrl, setMintUrl] = useState(params.get("mint") || "https://mint-signet.21pay.org");
+  const [mintUrl, setMintUrl] = useState(params.get("mint") || SIGNET_MINT);
   const [market, setMarket] = useState(params.get("id") ?? "");
   const [oracle, setOracle] = useState(params.get("oracle") || DEFAULT_ORACLE);
   const [nonce, setNonce] = useState(params.get("nonce") ?? "");
@@ -237,6 +239,17 @@ function BetView() {
           <span className="break-all">{bettorPub ? `wallet ${bettorPub.slice(0, 16)}…` : "creating wallet…"}</span>
           <Link href="/wallet/" style={{ color: "var(--accent)" }}>view wallet →</Link>
         </div>
+      </div>
+
+      {/* network: which mint to deposit on (signet test sats vs mainnet real sats) */}
+      <div className="flex gap-2 items-center text-sm">
+        <span className="text-xs" style={{ color: "var(--muted)" }}>network</span>
+        <Button size="sm" variant={mintUrl === SIGNET_MINT ? "primary" : "secondary"} onClick={() => setMintUrl(SIGNET_MINT)}>
+          Signet (test)
+        </Button>
+        <Button size="sm" variant={mintUrl === MAINNET_MINT ? "primary" : "secondary"} onClick={() => setMintUrl(MAINNET_MINT)}>
+          Mainnet (real sats)
+        </Button>
       </div>
 
       {/* 1 · pick a side + stake */}
