@@ -15,7 +15,7 @@ import { Alert, Button, Card, Input, Select, Textarea } from "@/components/ui";
 // The 21pay oracle + mint running on the Umbrel — proposed by default so creating a market needs
 // only a question + a date. Advanced users can override with their own oracle/mint below.
 const DEFAULT_ORACLE = "b32187c658b01420003049758660e62e4a7dd3daefac42076cd1664adce0e335";
-const DEFAULT_MINT = "https://mint-signet.21pay.org";
+const DEFAULT_MINT = "https://mint-mainnet.21pay.org";
 // dlc_contract is required by the protocol but not used in the signet/test deployment yet.
 const PLACEHOLDER_DLC = "0000000000000000000000000000000000000000000000000000000000000000:0";
 
