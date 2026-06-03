@@ -56,6 +56,7 @@ export default function CreateMarketPage() {
   const [hUrl, setHUrl] = useState("");
   const [hPath, setHPath] = useState("");
   const [llmCriteria, setLlmCriteria] = useState("");
+  const [llmProvider, setLlmProvider] = useState("default");
   const [customSpec, setCustomSpec] = useState("");
 
   /** Assembles the chosen rubrique into a connector spec JSON string, or undefined for manual. */
@@ -87,9 +88,13 @@ export default function CreateMarketPage() {
         if (path.length === 0) throw new Error("Enter the JSON path to the number (e.g. data.0.score).");
         return JSON.stringify({ connector: "http", url: hUrl.trim(), path, op, threshold: th });
       }
-      case "llm":
+      case "llm": {
         // The question is the market question; the oracle's LLM endpoint/key/model are its own env.
-        return JSON.stringify({ connector: "llm", question: question.trim(), criteria: llmCriteria.trim() });
+        // `provider` is just a label the oracle maps to a configured model — no key is ever published.
+        const spec: Record<string, unknown> = { connector: "llm", question: question.trim(), criteria: llmCriteria.trim() };
+        if (llmProvider !== "default") spec.provider = llmProvider;
+        return JSON.stringify(spec);
+      }
       case "custom": {
         const t = customSpec.trim();
         if (!t) return undefined;
@@ -333,6 +338,15 @@ export default function CreateMarketPage() {
 
         {autoKind === "llm" && (
           <div className="flex flex-col gap-2 text-sm">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs">model</span>
+              <Select value={llmProvider} onChange={(e) => setLlmProvider(e.target.value)}>
+                <option value="default">oracle default</option>
+                <option value="kimi">Kimi (Moonshot)</option>
+                <option value="claude">Claude Sonnet</option>
+                <option value="consensus">consensus — both must agree (else INVALID)</option>
+              </Select>
+            </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs">resolution criteria (optional context for the model)</span>
               <Textarea rows={2} placeholder="Resolve YES only if officially confirmed by a primary source before the close date (UTC)." value={llmCriteria} onChange={(e) => setLlmCriteria(e.target.value)} />

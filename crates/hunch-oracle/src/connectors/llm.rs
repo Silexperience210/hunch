@@ -19,7 +19,8 @@ use std::str::FromStr;
 
 use super::Resolution;
 
-/// "Resolve this yes/no question by asking an LLM." Endpoint/key/model are env, not part of the spec.
+/// "Resolve this yes/no question by asking an LLM." Endpoints/keys/models are env, not part of the
+/// spec — only a *provider label* may appear, so different oracles can answer with different models.
 #[derive(Debug, Deserialize)]
 pub struct LlmSpec {
     /// The yes/no question to decide.
@@ -27,6 +28,11 @@ pub struct LlmSpec {
     /// Optional extra resolution criteria / context handed to the model.
     #[serde(default)]
     pub criteria: String,
+    /// Which configured provider(s) answer. `None`/empty → the default env. A label like `"kimi"` or
+    /// `"claude"` → that provider's env. A comma list (`"kimi,claude"`) or `"consensus"`/`"all"`
+    /// (which expands `HUNCH_LLM_PROVIDERS`) → query each and require unanimity, else INVALID.
+    #[serde(default)]
+    pub provider: Option<String>,
 }
 
 /// The exact prompt sent to the model — public so the wording is auditable.
@@ -132,24 +138,108 @@ fn truncate(s: &str, n: usize) -> String {
     }
 }
 
-/// Asks the configured LLM and parses its verdict. Endpoint/key/model come from env.
-pub async fn resolve(spec: &LlmSpec) -> Result<Resolution> {
-    let url = std::env::var("HUNCH_LLM_URL")
-        .context("HUNCH_LLM_URL not set (oracle's OpenAI-compatible /chat/completions endpoint)")?;
-    let key = std::env::var("HUNCH_LLM_KEY").unwrap_or_default();
-    let model = std::env::var("HUNCH_LLM_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
+/// A resolved provider config: where to POST, the bearer key, and the model id.
+struct Provider {
+    name: String,
+    url: String,
+    key: String,
+    model: String,
+}
 
+impl Provider {
+    fn label(&self) -> &str {
+        if self.name.is_empty() {
+            "default"
+        } else {
+            &self.name
+        }
+    }
+}
+
+/// Provider names to query. `None`/empty → `[""]` (the default env). `"consensus"`/`"all"` expand the
+/// `configured` list (from `HUNCH_LLM_PROVIDERS`). Anything else is treated as a comma list. Pure.
+pub fn provider_names(spec_provider: Option<&str>, configured: &str) -> Vec<String> {
+    match spec_provider.map(str::trim) {
+        None | Some("") => vec![String::new()],
+        Some("consensus") | Some("all") => split_csv(configured),
+        Some(list) => split_csv(list),
+    }
+}
+
+fn split_csv(s: &str) -> Vec<String> {
+    let v: Vec<String> = s
+        .split(',')
+        .map(|x| x.trim().to_string())
+        .filter(|x| !x.is_empty())
+        .collect();
+    if v.is_empty() {
+        vec![String::new()]
+    } else {
+        v
+    }
+}
+
+/// Reads a provider's config from env. Default provider (`""`) uses `HUNCH_LLM_{URL,KEY,MODEL}`; a
+/// named provider `kimi` uses `HUNCH_LLM_KIMI_{URL,KEY,MODEL}`. Key is optional (local models).
+fn provider_env(name: &str) -> Result<Provider> {
+    let prefix = if name.is_empty() {
+        "HUNCH_LLM".to_string()
+    } else {
+        format!(
+            "HUNCH_LLM_{}",
+            name.to_uppercase()
+                .replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+        )
+    };
+    let label = if name.is_empty() { "default" } else { name };
+    let url = std::env::var(format!("{prefix}_URL")).with_context(|| {
+        format!("{prefix}_URL not set (OpenAI-compatible /chat/completions endpoint for '{label}')")
+    })?;
+    let key = std::env::var(format!("{prefix}_KEY")).unwrap_or_default();
+    let model =
+        std::env::var(format!("{prefix}_MODEL")).unwrap_or_else(|_| "gpt-4o-mini".to_string());
+    Ok(Provider {
+        name: name.to_string(),
+        url,
+        key,
+        model,
+    })
+}
+
+/// Combine per-provider verdicts: unanimous → that outcome; any disagreement (or none) → INVALID.
+/// This is the ensemble guard — a single model can't unilaterally settle a consensus market. Pure.
+pub fn combine(verdicts: &[(String, Outcome)]) -> Resolution {
+    let detail = verdicts
+        .iter()
+        .map(|(n, o)| format!("{n}={}", o.as_str()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let first = verdicts.first().map(|(_, o)| *o);
+    let unanimous = first.is_some_and(|f| verdicts.iter().all(|(_, o)| *o == f));
+    let outcome = if unanimous {
+        first.unwrap()
+    } else {
+        Outcome::Invalid
+    };
+    Resolution {
+        outcome,
+        evidence: format!("llm consensus [{detail}] => {}", outcome.as_str()),
+    }
+}
+
+/// One provider's verdict for the spec.
+async fn resolve_with(p: &Provider, spec: &LlmSpec) -> Result<Resolution> {
     let body = serde_json::json!({
-        "model": model,
+        "model": p.model,
         "temperature": 0,
         "messages": [{ "role": "user", "content": build_prompt(spec) }],
     });
     let client = reqwest::Client::builder()
         .user_agent("hunch-oracle")
         .build()?;
-    let mut req = client.post(&url).json(&body);
-    if !key.is_empty() {
-        req = req.bearer_auth(&key);
+    let mut req = client.post(&p.url).json(&body);
+    if !p.key.is_empty() {
+        req = req.bearer_auth(&p.key);
     }
     let resp: serde_json::Value = req.send().await?.error_for_status()?.json().await?;
     let content = resp["choices"][0]["message"]["content"]
@@ -157,12 +247,31 @@ pub async fn resolve(spec: &LlmSpec) -> Result<Resolution> {
         .context("LLM response missing choices[0].message.content")?;
     let (outcome, reasoning) = parse_decision(content)?;
     let evidence = format!(
-        "llm[{model}] \"{}\" => {} — {}",
+        "llm[{}/{}] \"{}\" => {} — {}",
+        p.label(),
+        p.model,
         truncate(&spec.question, 80),
         outcome.as_str(),
         reasoning,
     );
     Ok(Resolution { outcome, evidence })
+}
+
+/// Asks the configured LLM(s) and parses the verdict. One provider → its answer; several → consensus.
+pub async fn resolve(spec: &LlmSpec) -> Result<Resolution> {
+    let configured = std::env::var("HUNCH_LLM_PROVIDERS").unwrap_or_default();
+    let names = provider_names(spec.provider.as_deref(), &configured);
+    if names.len() == 1 {
+        let p = provider_env(&names[0])?;
+        return resolve_with(&p, spec).await;
+    }
+    let mut verdicts = Vec::new();
+    for name in &names {
+        let p = provider_env(name)?;
+        let r = resolve_with(&p, spec).await?;
+        verdicts.push((p.label().to_string(), r.outcome));
+    }
+    Ok(combine(&verdicts))
 }
 
 #[cfg(test)]
@@ -173,6 +282,7 @@ mod tests {
         LlmSpec {
             question: "Did it happen?".into(),
             criteria: "by 2026-12-31 UTC".into(),
+            provider: None,
         }
     }
 
@@ -218,5 +328,41 @@ mod tests {
         assert!(p.contains("Did it happen?"));
         assert!(p.contains("by 2026-12-31 UTC"));
         assert!(p.contains("INVALID"));
+    }
+
+    #[test]
+    fn provider_names_routing() {
+        assert_eq!(provider_names(None, ""), vec![String::new()]);
+        assert_eq!(provider_names(Some(""), ""), vec![String::new()]);
+        assert_eq!(provider_names(Some("kimi"), ""), vec!["kimi"]);
+        assert_eq!(
+            provider_names(Some("kimi, claude"), ""),
+            vec!["kimi", "claude"]
+        );
+        assert_eq!(
+            provider_names(Some("consensus"), "kimi,claude"),
+            vec!["kimi", "claude"]
+        );
+        assert_eq!(
+            provider_names(Some("all"), "kimi,claude"),
+            vec!["kimi", "claude"]
+        );
+    }
+
+    #[test]
+    fn combine_unanimous_vs_disagree() {
+        let yes = |n: &str| (n.to_string(), Outcome::Yes);
+        // both agree → that outcome
+        assert_eq!(combine(&[yes("kimi"), yes("claude")]).outcome, Outcome::Yes);
+        // disagreement → INVALID (no single model can settle a consensus market)
+        let mixed = [
+            ("kimi".to_string(), Outcome::Yes),
+            ("claude".to_string(), Outcome::No),
+        ];
+        assert_eq!(combine(&mixed).outcome, Outcome::Invalid);
+        // single verdict carries
+        assert_eq!(combine(&[yes("kimi")]).outcome, Outcome::Yes);
+        // empty → INVALID
+        assert_eq!(combine(&[]).outcome, Outcome::Invalid);
     }
 }
