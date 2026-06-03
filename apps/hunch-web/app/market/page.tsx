@@ -134,6 +134,8 @@ function summarizeSpec(raw?: string): string {
         return `auto · onchain ${s.metric} ${s.op} ${s.threshold}`;
       case "http":
         return `auto · http ${s.url} ${s.op} ${s.threshold}`;
+      case "llm":
+        return `auto · AI/LLM verdict (oracle's model)`;
       default:
         return `auto · ${s.connector ?? "custom"}`;
     }

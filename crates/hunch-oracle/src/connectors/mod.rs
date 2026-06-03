@@ -11,6 +11,7 @@ use hunch_protocol::outcome::Outcome;
 use serde::Deserialize;
 
 pub mod http;
+pub mod llm;
 pub mod onchain;
 pub mod price;
 pub mod weather;
@@ -72,6 +73,8 @@ pub enum ResolutionSpec {
     Onchain(onchain::OnchainSpec),
     /// Generic: fetch any JSON URL, extract a numeric field by path, compare.
     Http(http::HttpSpec),
+    /// Natural-language: ask an LLM (oracle-operator endpoint via env) for a strict YES/NO/INVALID.
+    Llm(llm::LlmSpec),
 }
 
 impl ResolutionSpec {
@@ -87,6 +90,7 @@ impl ResolutionSpec {
             ResolutionSpec::Weather(w) => weather::resolve(w).await,
             ResolutionSpec::Onchain(o) => onchain::resolve(o).await,
             ResolutionSpec::Http(h) => http::resolve(h).await,
+            ResolutionSpec::Llm(l) => llm::resolve(l).await,
         }
     }
 }
@@ -137,6 +141,10 @@ mod tests {
             )
             .unwrap(),
             ResolutionSpec::Http(_)
+        ));
+        assert!(matches!(
+            ResolutionSpec::from_json(r#"{"connector":"llm","question":"Did X happen?"}"#).unwrap(),
+            ResolutionSpec::Llm(_)
         ));
     }
 

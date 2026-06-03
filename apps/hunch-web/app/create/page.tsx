@@ -43,7 +43,7 @@ export default function CreateMarketPage() {
 
   // Auto-resolution "rubrique" — friendly presets wired to a data source, so a creator never writes
   // raw connector JSON. "manual" = the oracle decides by hand.
-  const [autoKind, setAutoKind] = useState<"manual" | "price" | "onchain" | "weather" | "http" | "custom">("manual");
+  const [autoKind, setAutoKind] = useState<"manual" | "price" | "onchain" | "weather" | "http" | "llm" | "custom">("manual");
   const [op, setOp] = useState(">=");
   const [threshold, setThreshold] = useState("");
   const [asset, setAsset] = useState("BTC");
@@ -55,6 +55,7 @@ export default function CreateMarketPage() {
   const [wMetric, setWMetric] = useState("precipitation_sum");
   const [hUrl, setHUrl] = useState("");
   const [hPath, setHPath] = useState("");
+  const [llmCriteria, setLlmCriteria] = useState("");
   const [customSpec, setCustomSpec] = useState("");
 
   /** Assembles the chosen rubrique into a connector spec JSON string, or undefined for manual. */
@@ -86,6 +87,9 @@ export default function CreateMarketPage() {
         if (path.length === 0) throw new Error("Enter the JSON path to the number (e.g. data.0.score).");
         return JSON.stringify({ connector: "http", url: hUrl.trim(), path, op, threshold: th });
       }
+      case "llm":
+        // The question is the market question; the oracle's LLM endpoint/key/model are its own env.
+        return JSON.stringify({ connector: "llm", question: question.trim(), criteria: llmCriteria.trim() });
       case "custom": {
         const t = customSpec.trim();
         if (!t) return undefined;
@@ -283,6 +287,7 @@ export default function CreateMarketPage() {
             <option value="onchain">Bitcoin on-chain (mempool.space)</option>
             <option value="weather">Weather (open-meteo)</option>
             <option value="http">Custom JSON API</option>
+            <option value="llm">AI / natural language (LLM oracle)</option>
             <option value="custom">Raw spec (advanced)</option>
           </Select>
         </label>
@@ -323,6 +328,20 @@ export default function CreateMarketPage() {
               <label className="flex flex-col gap-1"><span className="text-xs">op</span><Select value={op} onChange={(e) => setOp(e.target.value)}><option>&gt;=</option><option>&gt;</option><option>&lt;=</option><option>&lt;</option></Select></label>
               <label className="flex flex-col gap-1"><span className="text-xs">threshold</span><Input className="w-28" inputMode="decimal" value={threshold} onChange={(e) => setThreshold(e.target.value)} /></label>
             </div>
+          </div>
+        )}
+
+        {autoKind === "llm" && (
+          <div className="flex flex-col gap-2 text-sm">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs">resolution criteria (optional context for the model)</span>
+              <Textarea rows={2} placeholder="Resolve YES only if officially confirmed by a primary source before the close date (UTC)." value={llmCriteria} onChange={(e) => setLlmCriteria(e.target.value)} />
+            </label>
+            <span className="text-xs" style={{ color: "var(--muted)" }}>
+              The market <b>question</b> above is the prompt. The oracle runs its own LLM (endpoint/key
+              are the operator&apos;s config, never published). Its reasoning is recorded as evidence;
+              distrust a verdict? Dispute it.
+            </span>
           </div>
         )}
 
