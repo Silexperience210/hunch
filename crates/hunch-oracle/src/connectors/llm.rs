@@ -29,8 +29,9 @@ pub struct LlmSpec {
     #[serde(default)]
     pub criteria: String,
     /// Which configured provider(s) answer. `None`/empty → the default env. A label like `"kimi"` or
-    /// `"claude"` → that provider's env. A comma list (`"kimi,claude"`) or `"consensus"`/`"all"`
-    /// (which expands `HUNCH_LLM_PROVIDERS`) → query each and require unanimity, else INVALID.
+    /// `"claude"` → that provider's env. A comma list or `"consensus"`/`"all"` → query each and
+    /// require unanimity, else INVALID. `"failover"`/`"any"` → try each (from `HUNCH_LLM_PROVIDERS`)
+    /// in order, first that answers wins (resilient to a provider being down/unfunded).
     #[serde(default)]
     pub provider: Option<String>,
 }
@@ -156,13 +157,33 @@ impl Provider {
     }
 }
 
-/// Provider names to query. `None`/empty → `[""]` (the default env). `"consensus"`/`"all"` expand the
-/// `configured` list (from `HUNCH_LLM_PROVIDERS`). Anything else is treated as a comma list. Pure.
-pub fn provider_names(spec_provider: Option<&str>, configured: &str) -> Vec<String> {
+/// How a spec's `provider` resolves to actual model calls.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// Ask exactly one provider (`""` = the default env).
+    Single(String),
+    /// Ask each and require unanimity, else INVALID (ensemble guard).
+    Consensus(Vec<String>),
+    /// Try each in order; the first that answers wins (resilient to a provider being down/unfunded).
+    Failover(Vec<String>),
+}
+
+/// Map a spec's `provider` label to a [`Mode`]. `None`/empty → default single. `"consensus"`/`"all"`
+/// and `"failover"`/`"any"` expand the `configured` list (`HUNCH_LLM_PROVIDERS`). A bare name → that
+/// one; a comma list → consensus among those. Pure.
+pub fn plan(spec_provider: Option<&str>, configured: &str) -> Mode {
     match spec_provider.map(str::trim) {
-        None | Some("") => vec![String::new()],
-        Some("consensus") | Some("all") => split_csv(configured),
-        Some(list) => split_csv(list),
+        None | Some("") => Mode::Single(String::new()),
+        Some("consensus") | Some("all") => Mode::Consensus(split_csv(configured)),
+        Some("failover") | Some("any") => Mode::Failover(split_csv(configured)),
+        Some(list) => {
+            let names = split_csv(list);
+            if names.len() == 1 {
+                Mode::Single(names.into_iter().next().unwrap_or_default())
+            } else {
+                Mode::Consensus(names)
+            }
+        }
     }
 }
 
@@ -257,21 +278,39 @@ async fn resolve_with(p: &Provider, spec: &LlmSpec) -> Result<Resolution> {
     Ok(Resolution { outcome, evidence })
 }
 
-/// Asks the configured LLM(s) and parses the verdict. One provider → its answer; several → consensus.
+/// Asks the configured LLM(s) and parses the verdict, per the spec's [`Mode`]: a single provider,
+/// a consensus (all must agree), or a failover (first provider that answers wins).
 pub async fn resolve(spec: &LlmSpec) -> Result<Resolution> {
     let configured = std::env::var("HUNCH_LLM_PROVIDERS").unwrap_or_default();
-    let names = provider_names(spec.provider.as_deref(), &configured);
-    if names.len() == 1 {
-        let p = provider_env(&names[0])?;
-        return resolve_with(&p, spec).await;
+    match plan(spec.provider.as_deref(), &configured) {
+        Mode::Single(name) => resolve_with(&provider_env(&name)?, spec).await,
+        Mode::Consensus(names) => {
+            let mut verdicts = Vec::new();
+            for name in &names {
+                let p = provider_env(name)?;
+                let r = resolve_with(&p, spec).await?;
+                verdicts.push((p.label().to_string(), r.outcome));
+            }
+            Ok(combine(&verdicts))
+        }
+        Mode::Failover(names) => {
+            let mut last_err = None;
+            for name in &names {
+                let attempt = match provider_env(name) {
+                    Ok(p) => resolve_with(&p, spec)
+                        .await
+                        .with_context(|| format!("provider '{}' failed", p.label())),
+                    Err(e) => Err(e),
+                };
+                match attempt {
+                    Ok(r) => return Ok(r),
+                    Err(e) => last_err = Some(e),
+                }
+            }
+            Err(last_err
+                .unwrap_or_else(|| anyhow!("failover: no providers (set HUNCH_LLM_PROVIDERS)")))
+        }
     }
-    let mut verdicts = Vec::new();
-    for name in &names {
-        let p = provider_env(name)?;
-        let r = resolve_with(&p, spec).await?;
-        verdicts.push((p.label().to_string(), r.outcome));
-    }
-    Ok(combine(&verdicts))
 }
 
 #[cfg(test)]
@@ -331,21 +370,30 @@ mod tests {
     }
 
     #[test]
-    fn provider_names_routing() {
-        assert_eq!(provider_names(None, ""), vec![String::new()]);
-        assert_eq!(provider_names(Some(""), ""), vec![String::new()]);
-        assert_eq!(provider_names(Some("kimi"), ""), vec!["kimi"]);
+    fn plan_routing() {
+        let csv = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(plan(None, ""), Mode::Single(String::new()));
+        assert_eq!(plan(Some(""), ""), Mode::Single(String::new()));
+        assert_eq!(plan(Some("kimi"), ""), Mode::Single("kimi".into()));
         assert_eq!(
-            provider_names(Some("kimi, claude"), ""),
-            vec!["kimi", "claude"]
+            plan(Some("kimi, claude"), ""),
+            Mode::Consensus(csv(&["kimi", "claude"]))
         );
         assert_eq!(
-            provider_names(Some("consensus"), "kimi,claude"),
-            vec!["kimi", "claude"]
+            plan(Some("consensus"), "kimi,claude"),
+            Mode::Consensus(csv(&["kimi", "claude"]))
         );
         assert_eq!(
-            provider_names(Some("all"), "kimi,claude"),
-            vec!["kimi", "claude"]
+            plan(Some("all"), "kimi,claude"),
+            Mode::Consensus(csv(&["kimi", "claude"]))
+        );
+        assert_eq!(
+            plan(Some("failover"), "claude,kimi"),
+            Mode::Failover(csv(&["claude", "kimi"]))
+        );
+        assert_eq!(
+            plan(Some("any"), "claude,kimi"),
+            Mode::Failover(csv(&["claude", "kimi"]))
         );
     }
 

@@ -345,6 +345,7 @@ export default function CreateMarketPage() {
                 <option value="kimi">Kimi (Moonshot)</option>
                 <option value="claude">Claude Sonnet</option>
                 <option value="consensus">consensus — both must agree (else INVALID)</option>
+                <option value="failover">failover — first available model answers</option>
               </Select>
             </label>
             <label className="flex flex-col gap-1">
