@@ -31,8 +31,8 @@ function BetView() {
   const [oracle, setOracle] = useState(params.get("oracle") || DEFAULT_ORACLE);
   const [nonce, setNonce] = useState(params.get("nonce") ?? "");
   const [relays, setRelays] = useState(relaysFromUrl().join(", "));
-  const [outcome, setOutcome] = useState<"YES" | "NO">("YES");
-  const [amount, setAmount] = useState("100");
+  const [outcome, setOutcome] = useState<"YES" | "NO">(params.get("side") === "NO" ? "NO" : "YES");
+  const [amount, setAmount] = useState(params.get("amount") || "100");
   const [secret, setSecret] = useState("");
   const [invoice, setInvoice] = useState("");
   const [attestationSig, setAttestationSig] = useState("");

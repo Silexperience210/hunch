@@ -17,8 +17,9 @@ import {
   type Order,
   type ReputationSummary,
 } from "@/lib/hunch";
-import { buildOrderBook, type OrderBook } from "@/lib/orderbook";
+import { buildOrderBook, impliedOdds, type OrderBook } from "@/lib/orderbook";
 import { OddsBar } from "@/components/OddsBar";
+import { AmmPanel } from "@/components/AmmPanel";
 import { relaysFromUrl, queryRelays } from "@/lib/relay";
 import { fetchAnnounce, fetchAttestation, fetchReputation } from "@/lib/oracle";
 import { fetchMintAnnounce } from "@/lib/mint";
@@ -142,9 +143,11 @@ function summarizeSpec(raw?: string): string {
 }
 
 /** Deep-link to /bet with everything the wallet needs pre-filled (mint + nonce when known). */
-function betHref(market: Market, announce: OracleAnnounce | null): string {
+function betHref(market: Market, announce: OracleAnnounce | null, opts?: { side?: "YES" | "NO"; amount?: number }): string {
   const q = new URLSearchParams({ id: market.id, oracle: market.oracle, mint: market.mint });
   if (announce) q.set("nonce", announce.nonce);
+  if (opts?.side) q.set("side", opts.side);
+  if (opts?.amount && opts.amount > 0) q.set("amount", String(Math.round(opts.amount)));
   return `/bet?${q.toString()}`;
 }
 
@@ -203,7 +206,7 @@ function RateOracleForm({ oracle, market, onRated }: { oracle: string; market: s
 }
 
 /** Market metadata + oracle status/reputation + settlement, from the kind:30888 / 88 / 89 / 30891 events. */
-function MarketMeta({ id }: { id: string }) {
+function MarketMeta({ id, anchorProb }: { id: string; anchorProb: number }) {
   const [market, setMarket] = useState<Market | null>(null);
   const [announce, setAnnounce] = useState<OracleAnnounce | null>(null);
   const [settlement, setSettlement] = useState<OracleAttestation | null>(null);
@@ -313,12 +316,15 @@ function MarketMeta({ id }: { id: string }) {
         <Row label="oracle nonce" value={announce ? `committed (${announce.nonce.slice(0, 16)}…)` : "not announced yet"} />
       </section>
       <RateOracleForm oracle={market.oracle} market={market.id} onRated={() => loadRep(market.oracle)} />
+      {!settlement && (
+        <AmmPanel anchorProb={anchorProb} href={(side, amount) => betHref(market, announce, { side, amount })} />
+      )}
       <Link
         href={betHref(market, announce)}
         className="self-start text-sm px-4 py-2 rounded font-bold"
         style={{ background: "var(--accent)", color: "#000" }}
       >
-        Bet →
+        Bet (advanced) →
       </Link>
       <Disputes market={market.id} attestationId={settlement?.eventId} />
     </div>
@@ -422,6 +428,10 @@ function MarketView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The AMM anchors its 1-click price on the book's implied odds (else 50/50).
+  const odds = book ? impliedOdds(book) : null;
+  const anchorProb = odds ? odds.yes / 100 : 0.5;
+
   async function load() {
     if (!id) {
       setError("No market id (?id=<creator>:30888:<d>).");
@@ -461,7 +471,7 @@ function MarketView() {
         </h1>
       </div>
 
-      {id && <MarketMeta id={id} />}
+      {id && <MarketMeta id={id} anchorProb={anchorProb} />}
 
       {book && (
         <section className="flex flex-col gap-1">
