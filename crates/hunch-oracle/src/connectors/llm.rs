@@ -145,6 +145,8 @@ struct Provider {
     url: String,
     key: String,
     model: String,
+    /// Sampling temperature to send, or `None` to omit the field (some models reject `0`). Default 0.
+    temperature: Option<f64>,
 }
 
 impl Provider {
@@ -219,12 +221,32 @@ fn provider_env(name: &str) -> Result<Provider> {
     let key = std::env::var(format!("{prefix}_KEY")).unwrap_or_default();
     let model =
         std::env::var(format!("{prefix}_MODEL")).unwrap_or_else(|_| "gpt-4o-mini".to_string());
+    let temperature = parse_temperature(
+        std::env::var(format!("{prefix}_TEMPERATURE"))
+            .ok()
+            .as_deref(),
+    );
     Ok(Provider {
         name: name.to_string(),
         url,
         key,
         model,
+        temperature,
     })
+}
+
+/// Parse a provider's `_TEMPERATURE` override: a number → send it; `omit`/`none`/empty → omit the
+/// field (for models like kimi-k2.6 that reject `0`); unset → `Some(0.0)` (deterministic default).
+pub fn parse_temperature(env: Option<&str>) -> Option<f64> {
+    match env.map(str::trim) {
+        None => Some(0.0),
+        Some(v)
+            if v.is_empty() || v.eq_ignore_ascii_case("omit") || v.eq_ignore_ascii_case("none") =>
+        {
+            None
+        }
+        Some(v) => Some(v.parse::<f64>().unwrap_or(0.0)),
+    }
 }
 
 /// Combine per-provider verdicts: unanimous → that outcome; any disagreement (or none) → INVALID.
@@ -250,11 +272,13 @@ pub fn combine(verdicts: &[(String, Outcome)]) -> Resolution {
 
 /// One provider's verdict for the spec.
 async fn resolve_with(p: &Provider, spec: &LlmSpec) -> Result<Resolution> {
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "model": p.model,
-        "temperature": 0,
         "messages": [{ "role": "user", "content": build_prompt(spec) }],
     });
+    if let Some(t) = p.temperature {
+        body["temperature"] = serde_json::json!(t);
+    }
     let client = reqwest::Client::builder()
         .user_agent("hunch-oracle")
         .build()?;
@@ -367,6 +391,16 @@ mod tests {
         assert!(p.contains("Did it happen?"));
         assert!(p.contains("by 2026-12-31 UTC"));
         assert!(p.contains("INVALID"));
+    }
+
+    #[test]
+    fn temperature_override() {
+        assert_eq!(parse_temperature(None), Some(0.0)); // deterministic default
+        assert_eq!(parse_temperature(Some("1")), Some(1.0));
+        assert_eq!(parse_temperature(Some("0.7")), Some(0.7));
+        assert_eq!(parse_temperature(Some("omit")), None); // kimi-k2.6 rejects temperature:0
+        assert_eq!(parse_temperature(Some("none")), None);
+        assert_eq!(parse_temperature(Some("")), None);
     }
 
     #[test]
