@@ -94,6 +94,7 @@ impl OracleService {
         market: &str,
         outcome: Outcome,
         nonce_secret_hex: &str,
+        evidence: &str,
         created_at: i64,
     ) -> Result<(Value, OracleAttestation)> {
         let nonce_bytes: [u8; 32] = hex::decode(nonce_secret_hex.trim())
@@ -107,6 +108,7 @@ impl OracleService {
             market: market.to_string(),
             outcome,
             signature_hex,
+            evidence: evidence.to_string(),
         };
         // Defense in depth: verify our own signature before broadcasting it.
         attestation
@@ -115,6 +117,12 @@ impl OracleService {
         let (tags, content) = attestation.to_event_parts();
         let event = self.sign(OracleAttestation::KIND, tags, content, created_at);
         Ok((event, attestation))
+    }
+
+    /// Sign a public kind:1 text note (social broadcast — NOT a protocol event). Used to announce
+    /// settlements on public relays so the oracle becomes a verifiable feed of resolved markets.
+    pub fn build_text_note(&self, content: String, tags: Vec<Tag>, created_at: i64) -> Value {
+        self.sign(1, tags, content, created_at)
     }
 
     fn sign(&self, kind: u32, tags: Vec<Tag>, content: String, created_at: i64) -> Value {
@@ -150,7 +158,7 @@ mod tests {
     fn attestation_event_is_well_formed_and_self_verifies() {
         let oracle = OracleService::from_secret_hex(TEST_SECRET).unwrap();
         let (event, att) = oracle
-            .build_attestation_event(&market_id(), Outcome::Yes, TEST_NONCE, 1_700_000_000)
+            .build_attestation_event(&market_id(), Outcome::Yes, TEST_NONCE, "", 1_700_000_000)
             .unwrap();
 
         assert_eq!(event["kind"], 89);

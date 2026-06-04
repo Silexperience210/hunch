@@ -205,8 +205,9 @@ async fn main() -> Result<()> {
             let mut store = NonceStore::load(&net.nonce_store)?;
             let nonce = store.nonce_for_attest(&market, outcome.as_str())?;
             let created_at = now();
+            // Manual attestation: no connector evidence.
             let (event, attestation) =
-                oracle.build_attestation_event(&market, outcome, &nonce.secret, created_at)?;
+                oracle.build_attestation_event(&market, outcome, &nonce.secret, "", created_at)?;
             // Lock the nonce to this outcome BEFORE publishing, so a later attest can never
             // sign a different outcome under the same R (which would leak the oracle key).
             store.commit_attest(&market, outcome.as_str())?;
@@ -239,8 +240,13 @@ async fn main() -> Result<()> {
             let mut store = NonceStore::load(&net.nonce_store)?;
             let nonce = store.nonce_for_attest(&market, outcome.as_str())?;
             let created_at = now();
-            let (event, attestation) =
-                oracle.build_attestation_event(&market, outcome, &nonce.secret, created_at)?;
+            let (event, attestation) = oracle.build_attestation_event(
+                &market,
+                outcome,
+                &nonce.secret,
+                &resolution.evidence,
+                created_at,
+            )?;
             store.commit_attest(&market, outcome.as_str())?;
             eprintln!(
                 "attestation: market={} outcome={} sig={}",
@@ -356,17 +362,114 @@ async fn tick_once(
             match spec.resolve().await {
                 Ok(res) => {
                     let nonce = store.nonce_for_attest(&id, res.outcome.as_str())?;
-                    let (event, _att) =
-                        oracle.build_attestation_event(&id, res.outcome, &nonce.secret, now)?;
+                    let (event, _att) = oracle.build_attestation_event(
+                        &id,
+                        res.outcome,
+                        &nonce.secret,
+                        &res.evidence,
+                        now,
+                    )?;
                     store.commit_attest(&id, res.outcome.as_str())?;
                     eprintln!("resolve {id} -> {} ({})", res.outcome, res.evidence);
                     let _ = broadcast(net, &event).await;
+                    // Optionally broadcast a public kind:1 note announcing the settlement (opt-in
+                    // via env): the oracle becomes a verifiable public feed of resolved markets.
+                    broadcast_settlement_note(
+                        oracle,
+                        &id,
+                        &market.content.question,
+                        res.outcome,
+                        &res.evidence,
+                        net.timeout,
+                        now,
+                    )
+                    .await;
                 }
                 Err(e) => eprintln!("resolve {id} failed (will retry next tick): {e:#}"),
             }
         }
     }
     Ok(())
+}
+
+/// Public site for share links (env override). Mirrors the web `SITE_URL`.
+fn site_url() -> String {
+    std::env::var("HUNCH_ORACLE_SITE_URL")
+        .unwrap_or_else(|_| "https://silexperience210.github.io/hunch".to_string())
+}
+
+/// Absolute, shareable market URL (mirror of the web `marketUrl`). The id's colons are percent-encoded.
+fn market_share_url(id: &str, site: &str) -> String {
+    format!(
+        "{}/market/?id={}",
+        site.trim_end_matches('/'),
+        id.replace(':', "%3A")
+    )
+}
+
+/// Build the kind:1 settlement note text — a mirror of the web `buildShareNote` (settled). Pure + tested.
+fn settlement_note_content(
+    question: &str,
+    id: &str,
+    outcome: Outcome,
+    evidence: &str,
+    site: &str,
+) -> String {
+    let head = if outcome == Outcome::Invalid {
+        "♻️ Settled: INVALID — bets refunded".to_string()
+    } else {
+        format!("✅ Settled: {outcome}")
+    };
+    let mut c = format!("{head}\n🎲 {}\n", question.trim());
+    if !evidence.trim().is_empty() {
+        c.push_str(&format!("\n{}\n", evidence.trim()));
+    }
+    c.push_str("\n🔏 Oracle-signed — verify the signature yourself:\n👉 ");
+    c.push_str(&market_share_url(id, site));
+    c.push_str("\n\n#hunch #bitcoin #predictions");
+    c
+}
+
+/// Broadcast a public kind:1 settlement note to the relays in `HUNCH_ORACLE_BROADCAST_RELAYS`
+/// (comma-separated). Opt-in: a no-op when the env var is unset/empty.
+async fn broadcast_settlement_note(
+    oracle: &OracleService,
+    id: &str,
+    question: &str,
+    outcome: Outcome,
+    evidence: &str,
+    timeout: u64,
+    created_at: i64,
+) {
+    let Ok(csv) = std::env::var("HUNCH_ORACLE_BROADCAST_RELAYS") else {
+        return;
+    };
+    let relays: Vec<String> = csv
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if relays.is_empty() {
+        return;
+    }
+    let site = site_url();
+    let content = settlement_note_content(question, id, outcome, evidence, &site);
+    let tags = vec![
+        vec!["t".to_string(), "hunch".to_string()],
+        vec!["t".to_string(), "bitcoin".to_string()],
+        vec!["t".to_string(), "predictions".to_string()],
+        vec!["r".to_string(), market_share_url(id, &site)],
+    ];
+    let note = oracle.build_text_note(content, tags, created_at);
+    let results = relay::publish_all(&relays, &note, Duration::from_secs(timeout)).await;
+    let ok = results
+        .iter()
+        .filter(|(_, r)| matches!(r, Ok(o) if o.accepted))
+        .count();
+    eprintln!(
+        "settlement note broadcast to {ok}/{} public relays",
+        relays.len()
+    );
 }
 
 /// Current unix time in seconds, for `created_at`.
@@ -402,4 +505,40 @@ async fn broadcast(net: &NetArgs, event: &serde_json::Value) -> Result<()> {
         anyhow::bail!("no relay accepted the event");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn share_url_encodes_colons() {
+        let u = market_share_url("ab:30888:m", "https://h/hunch/");
+        assert_eq!(u, "https://h/hunch/market/?id=ab%3A30888%3Am");
+    }
+
+    #[test]
+    fn settlement_note_has_verdict_question_evidence_link() {
+        let c = settlement_note_content(
+            "Is BTC capped at 21M?",
+            "ab:30888:m",
+            Outcome::Yes,
+            "Yes — hard-coded 21M cap.",
+            "https://h/hunch",
+        );
+        assert!(c.contains("✅ Settled: YES"));
+        assert!(c.contains("🎲 Is BTC capped at 21M?"));
+        assert!(c.contains("Yes — hard-coded 21M cap."));
+        assert!(c.contains("verify the signature yourself"));
+        assert!(c.contains("market/?id=ab%3A30888%3Am"));
+        assert!(c.contains("#hunch"));
+    }
+
+    #[test]
+    fn invalid_settlement_reads_as_refund() {
+        let c = settlement_note_content("Q?", "ab:30888:m", Outcome::Invalid, "", "https://h");
+        assert!(c.contains("INVALID — bets refunded"));
+        // no evidence line when empty
+        assert!(!c.contains("\n\n\n"));
+    }
 }

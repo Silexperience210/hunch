@@ -167,6 +167,9 @@ export interface OracleAttestation {
   signature: string;
   /** The kind:89 event id (so it can be referenced by a dispute). */
   eventId: string;
+  /** Human-readable resolution evidence (the connector's reasoning), from the event content.
+   * Authenticated by the oracle's NIP-01 event signature. Empty for manual attestations. */
+  evidence: string;
 }
 
 /** Parses a kind:89 NIP-88 attestation, or returns null if malformed (mirrors `OracleAttestation::from_event`). */
@@ -179,7 +182,7 @@ export function parseAttestationEvent(ev: NostrEvent): OracleAttestation | null 
   if (!market || !outcome || !signature) return null;
   if (!(OUTCOMES as readonly string[]).includes(outcome)) return null;
   if (!/^[0-9a-f]{128}$/i.test(signature)) return null; // 64-byte hex
-  return { market, outcome, signature: signature.toLowerCase(), eventId: ev.id };
+  return { market, outcome, signature: signature.toLowerCase(), eventId: ev.id, evidence: (ev.content ?? "").trim() };
 }
 
 /** HIP-5 reputation scopes (mirrors `ReputationScope`). */

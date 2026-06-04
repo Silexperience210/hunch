@@ -163,11 +163,14 @@ test("parseAnnounceEvent rejects wrong kind and bad nonce length", () => {
   assert.strictEqual(parseAnnounceEvent(bad), null);
 });
 
-test("parseAttestationEvent extracts the 64-byte signature and outcome", () => {
-  const a = parseAttestationEvent(attestationEvent());
+test("parseAttestationEvent extracts the 64-byte signature, outcome and evidence", () => {
+  const ev = attestationEvent();
+  ev.content = "llm[claude] => YES — capped at 21M.";
+  const a = parseAttestationEvent(ev);
   assert.ok(a);
   assert.strictEqual(a!.outcome, "YES");
   assert.strictEqual(a!.signature.length, 128);
+  assert.strictEqual(a!.evidence, "llm[claude] => YES — capped at 21M.");
 });
 
 test("parseAttestationEvent rejects unknown outcome and bad signature length", () => {

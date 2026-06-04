@@ -74,6 +74,11 @@ pub struct OracleAttestation {
     pub outcome: Outcome,
     /// Schnorr signature over the canonical message (HIP-2 adapter construction), hex.
     pub signature_hex: String,
+    /// Human-readable resolution evidence (the connector's reasoning / observed value). Carried in
+    /// the event content, so it is covered by the oracle's NIP-01 event signature (authenticated)
+    /// even though it is NOT part of the DLC `signing_message`. Empty for manual attestations.
+    #[serde(default)]
+    pub evidence: String,
 }
 
 impl OracleAttestation {
@@ -91,7 +96,7 @@ impl OracleAttestation {
         buf
     }
 
-    pub fn from_event(kind: u32, tags: &[TagTuple], _content: &str) -> Result<Self, ProtocolError> {
+    pub fn from_event(kind: u32, tags: &[TagTuple], content: &str) -> Result<Self, ProtocolError> {
         if kind != Self::KIND {
             return Err(ProtocolError::KindMismatch {
                 expected: Self::KIND,
@@ -111,6 +116,7 @@ impl OracleAttestation {
             market,
             outcome,
             signature_hex,
+            evidence: content.to_string(),
         })
     }
 
@@ -121,7 +127,7 @@ impl OracleAttestation {
                 vec!["outcome".into(), self.outcome.as_str().into()],
                 vec!["sig".into(), self.signature_hex.clone()],
             ],
-            String::new(),
+            self.evidence.clone(),
         )
     }
 
@@ -198,6 +204,7 @@ impl OracleSigner for SingleKeySigner {
             market: market.into(),
             outcome,
             signature_hex: hex::encode(sig.as_ref()),
+            evidence: String::new(),
         })
     }
 }
@@ -254,6 +261,7 @@ mod tests {
             market: att.market.clone(),
             outcome: Outcome::No,
             signature_hex: att.signature_hex,
+            evidence: String::new(),
         };
         assert!(tampered.verify(&signer.pubkey()).is_err());
     }

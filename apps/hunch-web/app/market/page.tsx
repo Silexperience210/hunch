@@ -162,6 +162,11 @@ function SettlementBanner({ s }: { s: OracleAttestation }) {
       <div className="text-sm font-bold" style={{ color: "var(--accent)" }}>
         Settled: {resolved}
       </div>
+      {s.evidence && (
+        <div className="text-sm" style={{ color: "var(--fg)" }}>
+          {s.evidence}
+        </div>
+      )}
       <div className="text-xs" style={{ color: "var(--muted)" }}>
         Oracle Schnorr signature (verify it yourself — relays are untrusted):
       </div>
@@ -335,7 +340,7 @@ function MarketMeta({ id, anchorProb }: { id: string; anchorProb: number }) {
             question: market.content.question,
             id: market.id,
             yes: settlement ? undefined : Math.round(anchorProb * 100),
-            settled: settlement ? { outcome: settlement.outcome } : null,
+            settled: settlement ? { outcome: settlement.outcome, reasoning: settlement.evidence } : null,
           }}
         />
       </div>

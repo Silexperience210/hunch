@@ -98,6 +98,7 @@ mod tests {
             market: market.clone(),
             outcome: Outcome::Yes,
             signature_hex: sig_hex,
+            evidence: String::new(),
         };
         let oracle_xonly =
             secp256k1::XOnlyPublicKey::from_slice(&hex::decode(xonly_hex(ORACLE_SECRET)).unwrap())
