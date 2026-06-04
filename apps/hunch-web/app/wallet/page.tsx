@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Proof, Wallet } from "@cashu/cashu-ts";
 import { compressedPubkey, randomBettorSecret } from "@/lib/dlc";
 import { connect, depositQuote, meltToInvoice, mintPlain, payWithWebln, waitPaid } from "@/lib/wallet";
+import { presetTip, resolveLnAddressInvoice, tipAddress, TIP_PRESETS } from "@/lib/tips";
 import { copyText } from "@/lib/clipboard";
 import { Alert, Button, Card, Input } from "@/components/ui";
 
@@ -75,6 +76,7 @@ export default function WalletPage() {
   const [depositAmount, setDepositAmount] = useState("1000");
   const [invoice, setInvoice] = useState("");
   const [withdrawInvoice, setWithdrawInvoice] = useState("");
+  const [tip, setTip] = useState(0);
   const [importKey, setImportKey] = useState("");
 
   const [status, setStatus] = useState<Status>(null);
@@ -219,10 +221,31 @@ export default function WalletPage() {
       const w = wallet.current ?? (await connect(mint.trim()));
       wallet.current = w;
       const { change, paid, fee } = await meltToInvoice(w, proofs, inv);
-      saveBalance(mint, change);
-      setBalance(change);
+
+      // Optional tip to the operator — paid from the leftover change, after the user's withdrawal,
+      // so it never eats into what they asked for. Gracefully skipped if it can't be sent.
+      let remaining = change;
+      let tipped = 0;
+      const want = presetTip(tip, sumSat(change));
+      if (want > 0) {
+        try {
+          const tipInv = await resolveLnAddressInvoice(tipAddress(), want);
+          const res = await meltToInvoice(w, remaining, tipInv);
+          remaining = res.change;
+          tipped = want;
+        } catch (e) {
+          log(`Withdrew ${paid} sat — tip skipped (${(e as Error).message}).`, "info");
+        }
+      }
+
+      saveBalance(mint, remaining);
+      setBalance(remaining);
       setWithdrawInvoice("");
-      log(`✔ Withdrew ${paid} sat (fee reserve ${fee}). Remaining ${sumSat(change)} sat.`, "ok");
+      setTip(0);
+      log(
+        `✔ Withdrew ${paid} sat (fee reserve ${fee})${tipped ? ` · tipped ${tipped} sat 🙏 thank you` : ""}. Remaining ${sumSat(remaining)} sat.`,
+        "ok",
+      );
     });
   }
 
@@ -294,6 +317,26 @@ export default function WalletPage() {
           <div className="flex gap-2">
             <Input className="flex-1" placeholder="bolt11 invoice (lntbs… / lnbc…)" value={withdrawInvoice} onChange={(e) => setWithdrawInvoice(e.target.value)} />
             <Button onClick={withdraw} disabled={busy || balSat === 0}>Withdraw</Button>
+          </div>
+          {/* Opt-in tip — supports the mint liquidity, oracle AI credits & hosting. Paid from leftover. */}
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <span style={{ color: "var(--muted)" }}>tip Hunch? 🙏</span>
+            {TIP_PRESETS.map((t) => (
+              <Button
+                key={t}
+                size="sm"
+                variant={tip === t ? "primary" : "secondary"}
+                onClick={() => setTip(t)}
+                title={t === 0 ? "No tip" : `Tip ${t} sat to ${tipAddress()} on withdraw`}
+              >
+                {t === 0 ? "No tip" : `${t} sat`}
+              </Button>
+            ))}
+            {tip > 0 && (
+              <span style={{ color: "var(--muted)" }}>
+                → {tipAddress()} (keeps the lights on, opt-in, from leftover)
+              </span>
+            )}
           </div>
         </div>
       </Card>
