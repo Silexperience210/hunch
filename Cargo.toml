@@ -8,6 +8,7 @@ members = [
     "crates/hunch-oracle",
     "crates/hunch-relay",
     "crates/hunch-matcher",
+    "crates/hunch-mm",
     "crates/hunch-cli",
 ]
 

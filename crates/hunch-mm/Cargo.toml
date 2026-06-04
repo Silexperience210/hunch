@@ -1,0 +1,22 @@
+[package]
+name = "hunch-mm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Hunch mint-as-market-maker — LMSR pricing with a maker fee (operator rake) and a per-market pool ledger. The mint is the counterparty for instant 1-click bets."
+
+[lib]
+name = "hunch_mm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hunch-mm"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json.workspace = true
+anyhow.workspace = true
+clap = { version = "4", features = ["derive", "env"] }
