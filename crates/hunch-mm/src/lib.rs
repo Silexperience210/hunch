@@ -7,7 +7,7 @@
 //!
 //! The math mirrors `apps/hunch-web/lib/{lmsr,amm}.ts` so the browser quote and the mint ledger
 //! agree. Settlement (the MM issuing tokens against its reserve and paying winners) layers on top of
-//! this ledger.
+//! this ledger — see `SETTLEMENT.md` for the operator-reserve design (Path 2).
 
 pub mod pool;
 pub mod store;
