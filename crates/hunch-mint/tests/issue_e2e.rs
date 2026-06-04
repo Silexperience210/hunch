@@ -68,12 +68,20 @@ fn redeem_set(
         p.sign_p2pk(SecretKey::from_hex(key_hex).unwrap()).unwrap();
         inputs.push(serde_json::to_value(&p).unwrap());
     }
-    let fresh = Secret::generate();
-    let (fb, _r) = blind_message(&Vec::<u8>::from(&fresh), None).unwrap();
-    let out = BlindedMessage::new(Amount::from(total), id, fb);
+    // Outputs must also be valid (power-of-2) denominations summing to `total` — the mint has no
+    // single key for e.g. 100. Split it the same way issuance does.
+    let denoms = [
+        1u64, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
+    ];
+    let mut outputs = Vec::new();
+    for d in hunch_mint::denominations(total, &denoms) {
+        let fresh = Secret::generate();
+        let (fb, _r) = blind_message(&Vec::<u8>::from(&fresh), None).unwrap();
+        outputs.push(serde_json::to_value(BlindedMessage::new(Amount::from(d), id, fb)).unwrap());
+    }
     let resp = client
         .post(format!("{url}/v1/swap"))
-        .json(&json!({ "inputs": inputs, "outputs": [serde_json::to_value(&out).unwrap()] }))
+        .json(&json!({ "inputs": inputs, "outputs": outputs }))
         .send()
         .unwrap();
     let ok = resp.status().is_success();
