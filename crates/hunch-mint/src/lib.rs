@@ -29,5 +29,5 @@ pub mod cashu_token;
 pub mod issue;
 pub mod token;
 
-pub use issue::{denominations, issue_locked};
+pub use issue::{claim_payment_json, claim_proofs, denominations, issue_locked, mint_bearer};
 pub use token::{build_outcome_token, redeem_spend_secret, verify_token_unlock, OutcomeToken};

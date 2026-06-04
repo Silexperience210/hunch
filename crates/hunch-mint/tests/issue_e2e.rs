@@ -12,7 +12,7 @@ use cashu::nuts::{BlindedMessage, Proof, SecretKey};
 use cashu::secret::Secret;
 use cashu::{Amount, Id};
 use hunch_dlc::{outcome_lock_key, outcome_unlock_secret, sign_attestation_with_nonce};
-use hunch_mint::issue_locked;
+use hunch_mint::{claim_proofs, issue_locked, mint_bearer};
 use hunch_protocol::outcome::Outcome;
 use secp256k1::{Keypair, PublicKey as SPublicKey, Secp256k1, SecretKey as SSecretKey};
 use serde_json::{json, Value};
@@ -154,4 +154,24 @@ fn e2e_issue_locked_set_redeems() {
     );
 
     println!("issue-at-odds OK: {payout}-sat YES set redeemed, NO set rejected by {url}");
+}
+
+#[test]
+#[ignore = "requires a running cdk-mintd at HUNCH_MINT_URL"]
+fn e2e_claim_payment() {
+    let url = mint_url();
+
+    // Mint 50 sat of bearer ecash (the bettor's payment), then the MM claims it into its reserve.
+    let payment = mint_bearer(&url, 50).unwrap();
+    let reserve = claim_proofs(&url, payment.clone()).unwrap();
+    let claimed: u64 = reserve.iter().map(|p| u64::from(p.amount)).sum();
+    assert_eq!(claimed, 50, "MM must claim the full payment");
+
+    // The same proofs can't be claimed twice (double-spend rejected by the mint).
+    assert!(
+        claim_proofs(&url, payment).is_err(),
+        "mint must reject re-claiming spent payment proofs"
+    );
+
+    println!("payment-leg OK: 50-sat payment claimed once, double-claim rejected by {url}");
 }

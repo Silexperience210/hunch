@@ -38,6 +38,8 @@ export interface BuyParams {
   /** Bettor's refund key B (33-byte compressed hex). */
   refund: string;
   locktime?: number;
+  /** Cashu proofs paying the quoted cost (the MM claims these before issuing). */
+  payment?: unknown[];
 }
 
 const HEX33 = /^[0-9a-f]{66}$/i;
@@ -58,6 +60,7 @@ export function buildBuyBody(p: BuyParams): Record<string, unknown> {
   if (p.budget) body.budget = p.budget;
   if (p.shares) body.shares = p.shares;
   if (p.locktime) body.locktime = p.locktime;
+  if (p.payment && p.payment.length) body.payment = p.payment;
   return body;
 }
 

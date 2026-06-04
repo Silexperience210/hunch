@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { Wallet } from "@cashu/cashu-ts";
 import { compressedPubkey, outcomeLockKey, outcomeUnlockSecret, randomBettorSecret } from "@/lib/dlc";
-import { connect, depositQuote, mintLocked, payWithWebln, redeem, swapToLocked, waitPaid } from "@/lib/wallet";
+import { connect, depositQuote, mintLocked, payWithWebln, redeem, sendEcash, swapToLocked, waitPaid } from "@/lib/wallet";
 import { mmBuy, mmUrl, setMmUrl } from "@/lib/mm";
 import { fetchAnnounce, fetchAttestation } from "@/lib/oracle";
 import { relaysFromUrl, queryRelays } from "@/lib/relay";
@@ -230,23 +230,40 @@ function BetView() {
       if (!nonce.trim()) throw new Error("Oracle nonce R not loaded yet — open “advanced” to fetch it.");
       const amt = Number(amount);
       if (!Number.isFinite(amt) || amt <= 0) throw new Error("Enter a stake amount.");
+      const balKey = `hunch:cashu:${mintUrl.trim()}`;
+      const bal = JSON.parse(localStorage.getItem(balKey) ?? "[]");
+      const balSat = bal.reduce((s: number, p: { amount: unknown }) => s + Number(p.amount), 0);
+      if (balSat < amt) throw new Error(`Not enough balance (${balSat} sat) to pay a ${amt} sat bet — top up in /wallet.`);
       const B = compressedPubkey(secret);
       const lock = outcomeLockKey(B, oracle.trim(), nonce.trim(), market.trim(), outcome);
-      log("Buying at the AMM odds — the mint is issuing your outcome tokens…");
-      const res = await mmBuy(url, {
-        market: market.trim(),
-        side: outcome,
-        budget: amt,
-        lock,
-        refund: B,
-        locktime: REFUND_LOCKTIME,
-      });
-      const prev = JSON.parse(localStorage.getItem(proofsKey) ?? "[]");
-      localStorage.setItem(proofsKey, JSON.stringify([...prev, ...res.proofs]));
-      log(
-        `✔ Bet via AMM — ${res.shares} sat payout on ${outcome} if you win (cost ${Math.round(res.cost)} sat, maker fee ${Math.round(res.fee)} sat), locked & saved. Redeem after settlement.`,
-        "ok",
-      );
+      const w = wallet.current ?? (await connect(mintUrl.trim()));
+      wallet.current = w;
+      log("Paying the market maker and getting your outcome tokens at the AMM odds…");
+      // Split the stake out of balance as bearer ecash to pay the MM.
+      const { payment, change } = await sendEcash(w, amt, bal);
+      try {
+        const res = await mmBuy(url, {
+          market: market.trim(),
+          side: outcome,
+          budget: amt,
+          lock,
+          refund: B,
+          locktime: REFUND_LOCKTIME,
+          payment,
+        });
+        // MM took the payment → keep only the change; store the issued outcome tokens.
+        localStorage.setItem(balKey, JSON.stringify(change));
+        const prev = JSON.parse(localStorage.getItem(proofsKey) ?? "[]");
+        localStorage.setItem(proofsKey, JSON.stringify([...prev, ...res.proofs]));
+        log(
+          `✔ Bet via AMM — paid ${Math.round(res.cost)} sat (maker fee ${Math.round(res.fee)} sat) for a ${res.shares} sat payout on ${outcome} if you win. Locked & saved; redeem after settlement.`,
+          "ok",
+        );
+      } catch (e) {
+        // The MM did not take the payment — restore the funds to the wallet balance.
+        localStorage.setItem(balKey, JSON.stringify([...change, ...payment]));
+        throw e;
+      }
     });
   }
 
@@ -362,11 +379,11 @@ function BetView() {
         {mmService.trim() && (
           <div className="flex flex-col gap-1">
             <Button variant="primary" onClick={buyViaMm} disabled={busy}>
-              Bet {amount} sat via AMM — instant, mint is the counterparty
+              Bet {amount} sat via AMM — pay from balance, mint is the counterparty
             </Button>
             <span className="text-xs" style={{ color: "var(--muted)" }}>
-              The mint issues your outcome tokens at the live LMSR odds (maker fee applies). Or use a
-              direct deposit below.
+              Pays the maker {amount} sat from your wallet balance; it issues your outcome tokens at the
+              live LMSR odds (maker fee applies). Or deposit over Lightning below.
             </span>
           </div>
         )}

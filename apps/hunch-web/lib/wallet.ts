@@ -54,6 +54,17 @@ export async function redeem(wallet: Wallet, proofs: Proof[], spendPrivkey: stri
   return wallet.receive(proofs, { privkey: spendPrivkey });
 }
 
+/** Split `amount` sat of bearer ecash out of `proofs` (e.g. to pay the market maker). Returns the
+ *  bearer `payment` proofs and the `change` to keep in the wallet balance. */
+export async function sendEcash(
+  wallet: Wallet,
+  amount: number,
+  proofs: Proof[],
+): Promise<{ payment: Proof[]; change: Proof[] }> {
+  const res: any = await wallet.send(amount, proofs);
+  return { payment: res.send ?? [], change: res.keep ?? [] };
+}
+
 /**
  * Pay a bet from existing wallet balance: swaps `proofs` into `amount` sat of P2PK-locked outputs
  * (L_X), reclaimable by `refundPubkey` after `locktime`. No Lightning round-trip. Returns the locked

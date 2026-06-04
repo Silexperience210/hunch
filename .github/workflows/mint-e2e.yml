@@ -10,6 +10,7 @@ on:
     paths:
       - "crates/hunch-mint/**"
       - "crates/hunch-dlc/**"
+      - "crates/hunch-mm/**"
       - ".github/workflows/mint-e2e.yml"
 
 jobs:
@@ -56,8 +57,10 @@ jobs:
             sleep 1
           done
           curl -sf http://127.0.0.1:8085/v1/info >/dev/null || { echo "--- mintd.log ---"; cat "$HOME/mintd.log"; exit 1; }
-          # Both the conditional-token flow (e2e_mint) and the MM /buy issuance (issue_e2e).
-          HUNCH_MINT_URL=http://127.0.0.1:8085 cargo test -p hunch-mint --tests -- --ignored --nocapture
+          # Conditional-token flow + MM issuance/payment (hunch-mint) and the /buy service route (hunch-mm).
+          export HUNCH_MINT_URL=http://127.0.0.1:8085
+          cargo test -p hunch-mint --tests -- --ignored --nocapture
+          cargo test -p hunch-mm --lib -- --ignored --nocapture
 
       - name: Mint logs (on failure)
         if: failure()

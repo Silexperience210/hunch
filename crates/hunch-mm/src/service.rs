@@ -155,7 +155,14 @@ fn route(
             }
             let quote = store.get(&market).unwrap().quote_buy(side, payout as f64);
 
-            // Issue the full payout, P2PK-locked to the bettor's L_X (MM fronts it from reserve).
+            // Payment leg: the bettor's `payment` (Cashu proofs) must cover the quoted cost. Claim it
+            // into the MM reserve FIRST (the swap is the verification gate) — no payment, no tokens.
+            let cost_sat = quote.cost.ceil() as u64;
+            let reserve = hunch_mint::claim_payment_json(mint_url, &j["payment"], cost_sat)
+                .context("claiming the bettor's payment")?;
+            append_reserve(store_path, &reserve)?;
+
+            // Now issue the full payout, P2PK-locked to the bettor's L_X (MM fronts payout − cost).
             let proofs = issue_locked(mint_url, payout, lock, refund, locktime)
                 .context("issuing outcome tokens")?;
 
@@ -177,6 +184,20 @@ fn side_label(s: Side) -> &'static str {
         Side::Yes => "YES",
         Side::No => "NO",
     }
+}
+
+/// Append claimed payment proofs to the MM reserve file (`<store>.reserve.json`). This is the
+/// operator's ecash float that backs winner payouts; persist it so nothing is lost on restart.
+fn append_reserve(store_path: &str, proofs: &[Value]) -> Result<()> {
+    let path = format!("{store_path}.reserve.json");
+    let mut existing: Vec<Value> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    existing.extend_from_slice(proofs);
+    std::fs::write(&path, serde_json::to_string(&existing)?)
+        .with_context(|| format!("writing reserve {path}"))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -220,5 +241,65 @@ mod tests {
         .is_err());
         assert!(route(&Method::Get, "/health", "", "x", &store).unwrap()["ok"] == true);
         let _ = std::fs::remove_file(&store);
+    }
+
+    #[test]
+    fn buy_without_payment_is_rejected() {
+        // No `payment` field → rejected before any mint call (lock/refund are valid dummy hex).
+        let store = seeded_store("nopay");
+        let lock = "02".to_string() + &"a".repeat(64);
+        let body = format!(
+            r#"{{"market":"m:1","side":"YES","budget":100,"lock":"{lock}","refund":"{lock}"}}"#
+        );
+        let err = route(&Method::Post, "/buy", &body, "http://127.0.0.1:1", &store).unwrap_err();
+        assert!(err.to_string().to_lowercase().contains("payment"));
+        let _ = std::fs::remove_file(&store);
+    }
+
+    // Full /buy with a real payment + issuance against a live cdk-mintd.
+    #[test]
+    #[ignore = "requires a running cdk-mintd at HUNCH_MINT_URL"]
+    fn buy_route_e2e() {
+        let url =
+            std::env::var("HUNCH_MINT_URL").unwrap_or_else(|_| "http://127.0.0.1:8085".into());
+        let store = seeded_store("buy-e2e");
+        // A valid compressed pubkey for lock/refund (the mint's amount-1 key); redemption isn't
+        // tested here — we only prove /buy claims payment and issues at odds.
+        let keys: Value = reqwest::blocking::get(format!("{url}/v1/keys"))
+            .unwrap()
+            .json()
+            .unwrap();
+        let lock = keys["keysets"][0]["keys"]["1"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        // Mint 200 sat of bearer ecash as the bettor's payment for a 100-sat budget.
+        let payment = serde_json::to_value(hunch_mint::mint_bearer(&url, 200).unwrap()).unwrap();
+        let body = json!({
+            "market": "m:1", "side": "YES", "budget": 100,
+            "lock": lock, "refund": lock, "payment": payment,
+        })
+        .to_string();
+        let v = route(&Method::Post, "/buy", &body, &url, &store).unwrap();
+        assert!(
+            v["shares"].as_u64().unwrap() >= 100,
+            "payout >= the 100-sat budget"
+        );
+        assert!(
+            v["proofs"].as_array().unwrap().len() >= 2,
+            "issued multi-denomination set"
+        );
+        let reserve = std::fs::read_to_string(format!("{store}.reserve.json")).unwrap();
+        assert!(!serde_json::from_str::<Value>(&reserve)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty());
+        println!(
+            "buy-route OK: paid + issued {} sat payout via the service",
+            v["shares"]
+        );
+        let _ = std::fs::remove_file(&store);
+        let _ = std::fs::remove_file(format!("{store}.reserve.json"));
     }
 }
