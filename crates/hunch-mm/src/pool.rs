@@ -28,8 +28,27 @@ pub struct Pool {
     pub b: f64,
     /// Maker fee in basis points (100 bps = 1%) — the operator's rake on each buy.
     pub fee_bps: u32,
-    /// Realized rake collected across all fills (sats).
+    /// Realized rake (sum of maker fees) across all fills (sats).
     pub realized_rake: f64,
+    /// Total sats taken in across all fills (sum of `cost`, fee included). Funds settlement payouts.
+    #[serde(default)]
+    pub collected: f64,
+}
+
+/// The financial outcome of settling a market: what the MM took in, what it owes the winners, and
+/// its realized profit/loss (which, for a hedged book, is exactly the rake).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Settlement {
+    /// Winning side, or `None` for INVALID (everyone refunded their cost).
+    pub winner: Option<Side>,
+    /// Total sats the MM collected from all bettors.
+    pub total_in: f64,
+    /// Sats owed to winners (each winning share pays 1 sat); for INVALID, refunds = total_in.
+    pub payout: f64,
+    /// MM realized profit/loss = total_in − payout. Bounded below by `rake − b·ln2`.
+    pub mm_pnl: f64,
+    /// The accrued maker rake (fee component) for reference.
+    pub rake: f64,
 }
 
 /// A quote for buying `shares` sats of payout on a side.
@@ -66,6 +85,7 @@ impl Pool {
             b,
             fee_bps,
             realized_rake: 0.0,
+            collected: 0.0,
         }
     }
 
@@ -156,7 +176,8 @@ impl Pool {
         (lo + hi) / 2.0
     }
 
-    /// Apply a buy: move inventory and accrue the maker fee. Returns the rake earned on this fill.
+    /// Apply a buy: move inventory, accrue the maker fee, and bank the sats taken in. Returns the
+    /// rake earned on this fill.
     pub fn apply_buy(&mut self, side: Side, shares: f64) -> f64 {
         let q = self.quote_buy(side, shares);
         match side {
@@ -164,7 +185,26 @@ impl Pool {
             Side::No => self.q_no += shares,
         }
         self.realized_rake += q.fee;
+        self.collected += q.cost;
         q.fee
+    }
+
+    /// Settle the market for a winning side (or `None` = INVALID). Computes the payout owed to winners
+    /// and the MM's realized P&L. For a hedged book (q_yes == q_no) the P&L equals the rake exactly,
+    /// regardless of outcome — the operator's edge with zero directional risk.
+    pub fn settle(&self, winner: Option<Side>) -> Settlement {
+        let payout = match winner {
+            Some(Side::Yes) => self.q_yes,
+            Some(Side::No) => self.q_no,
+            None => self.collected, // INVALID → refund everyone their cost
+        };
+        Settlement {
+            winner,
+            total_in: self.collected,
+            payout,
+            mm_pnl: self.collected - payout,
+            rake: self.realized_rake,
+        }
     }
 }
 
@@ -220,6 +260,41 @@ mod tests {
         let shares = p.shares_for_budget(Side::Yes, 100.0);
         assert!(close(p.quote_buy(Side::Yes, shares).cost, 100.0));
         assert_eq!(p.shares_for_budget(Side::Yes, 0.0), 0.0);
+    }
+
+    #[test]
+    fn hedged_book_settles_to_exactly_the_rake() {
+        // Equal shares on each side → q_yes == q_no → zero directional risk: the MM keeps the rake
+        // whichever way it resolves. This is the headline economic guarantee.
+        let mut p = Pool::new("m", 10_000.0, 200);
+        p.apply_buy(Side::Yes, 500.0);
+        p.apply_buy(Side::No, 500.0);
+        assert!(close(p.q_yes, p.q_no));
+        let sy = p.settle(Some(Side::Yes));
+        let sn = p.settle(Some(Side::No));
+        assert!(close(sy.mm_pnl, p.realized_rake));
+        assert!(close(sn.mm_pnl, p.realized_rake));
+        assert!(p.realized_rake > 0.0);
+    }
+
+    #[test]
+    fn settlement_conserves_and_pnl_is_bounded() {
+        let mut p = Pool::new("m", 10_000.0, 200);
+        p.apply_buy(Side::Yes, 1873.0);
+        p.apply_buy(Side::No, 800.0); // unbalanced → outcome-dependent P&L
+        for w in [Some(Side::Yes), Some(Side::No)] {
+            let s = p.settle(w);
+            assert!(close(s.total_in, s.payout + s.mm_pnl)); // money is conserved
+            assert!(s.mm_pnl >= p.realized_rake - p.max_subsidy() - 1.0); // bounded downside
+        }
+    }
+
+    #[test]
+    fn invalid_refunds_everyone_with_zero_pnl() {
+        let mut p = Pool::new("m", 10_000.0, 200);
+        p.apply_buy(Side::Yes, 500.0);
+        let s = p.settle(None);
+        assert!(close(s.payout, s.total_in) && close(s.mm_pnl, 0.0));
     }
 
     #[test]

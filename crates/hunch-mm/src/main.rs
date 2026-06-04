@@ -90,6 +90,16 @@ enum Command {
         #[arg(long, group = "size")]
         budget: Option<f64>,
     },
+    /// Settle a market: show payout owed to winners and the MM's realized profit (the rake).
+    Settle {
+        #[command(flatten)]
+        store: StoreArg,
+        #[arg(long)]
+        market: String,
+        /// Winning outcome: YES, NO, or INVALID (refund all).
+        #[arg(long)]
+        outcome: String,
+    },
     /// Show realized rake (one market, or total across all).
     Rake {
         #[command(flatten)]
@@ -160,6 +170,33 @@ fn main() -> Result<()> {
                 fee,
                 pool.realized_rake,
                 pool.price_yes()
+            );
+        }
+        Command::Settle {
+            store,
+            market,
+            outcome,
+        } => {
+            let s = PoolStore::load(&store.store)?;
+            let pool = s.get(&market).context("no pool — seed it first")?;
+            let winner = match outcome.to_uppercase().as_str() {
+                "YES" => Some(Side::Yes),
+                "NO" => Some(Side::No),
+                "INVALID" => None,
+                other => anyhow::bail!("outcome must be YES, NO or INVALID (got {other})"),
+            };
+            let r = pool.settle(winner);
+            let label = winner
+                .map(|w| format!("{w:?}"))
+                .unwrap_or_else(|| "INVALID".into());
+            println!(
+                "settle {market} = {label}: took in {:.2} sat, owe winners {:.2} sat → \
+                 MM P&L {:+.2} sat (rake {:.2} sat, max subsidy {:.0} sat)",
+                r.total_in,
+                r.payout,
+                r.mm_pnl,
+                r.rake,
+                pool.max_subsidy()
             );
         }
         Command::Rake { store, market } => {
