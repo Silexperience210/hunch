@@ -241,8 +241,9 @@ function BetView() {
       log("Paying the market maker and getting your outcome tokens at the AMM odds…");
       // Split the stake out of balance as bearer ecash to pay the MM.
       const { payment, change } = await sendEcash(w, amt, bal);
+      let res;
       try {
-        const res = await mmBuy(url, {
+        res = await mmBuy(url, {
           market: market.trim(),
           side: outcome,
           budget: amt,
@@ -251,19 +252,25 @@ function BetView() {
           locktime: REFUND_LOCKTIME,
           payment,
         });
-        // MM took the payment → keep only the change; store the issued outcome tokens.
-        localStorage.setItem(balKey, JSON.stringify(change));
-        const prev = JSON.parse(localStorage.getItem(proofsKey) ?? "[]");
-        localStorage.setItem(proofsKey, JSON.stringify([...prev, ...res.proofs]));
-        log(
-          `✔ Bet via AMM — paid ${Math.round(res.cost)} sat (maker fee ${Math.round(res.fee)} sat) for a ${res.shares} sat payout on ${outcome} if you win. Locked & saved; redeem after settlement.`,
-          "ok",
-        );
       } catch (e) {
-        // The MM did not take the payment — restore the funds to the wallet balance.
+        // Request failed BEFORE the MM claimed the payment → the proofs are untouched, restore them.
         localStorage.setItem(balKey, JSON.stringify([...change, ...payment]));
         throw e;
       }
+      if (!("proofs" in res)) {
+        // Payment was claimed then issuance failed → the original payment is spent; restore the
+        // fresh refund proofs the MM handed back instead, so no funds are lost.
+        localStorage.setItem(balKey, JSON.stringify([...change, ...res.refund]));
+        throw new Error("AMM couldn't issue your tokens — your stake was refunded to your balance. " + res.error);
+      }
+      // Success: keep the change; store the issued outcome tokens.
+      localStorage.setItem(balKey, JSON.stringify(change));
+      const prev = JSON.parse(localStorage.getItem(proofsKey) ?? "[]");
+      localStorage.setItem(proofsKey, JSON.stringify([...prev, ...res.proofs]));
+      log(
+        `✔ Bet via AMM — paid ${Math.round(res.cost)} sat (maker fee ${Math.round(res.fee)} sat) for a ${res.shares} sat payout on ${outcome} if you win. Locked & saved; redeem after settlement.`,
+        "ok",
+      );
     });
   }
 

@@ -156,23 +156,30 @@ fn route(
             let quote = store.get(&market).unwrap().quote_buy(side, payout as f64);
 
             // Payment leg: the bettor's `payment` (Cashu proofs) must cover the quoted cost. Claim it
-            // into the MM reserve FIRST (the swap is the verification gate) — no payment, no tokens.
+            // (the swap is the verification gate) — no payment, no tokens. A claim failure is a 400
+            // and the bettor's proofs are NOT consumed (they restore them client-side).
             let cost_sat = quote.cost.ceil() as u64;
             let reserve = hunch_mint::claim_payment_json(mint_url, &j["payment"], cost_sat)
                 .context("claiming the bettor's payment")?;
-            append_reserve(store_path, &reserve)?;
 
-            // Now issue the full payout, P2PK-locked to the bettor's L_X (MM fronts payout − cost).
-            let proofs = issue_locked(mint_url, payout, lock, refund, locktime)
-                .context("issuing outcome tokens")?;
-
-            // Record the fill only after issuance succeeds.
-            store.apply_buy(&market, side, payout as f64)?;
-
-            Ok(json!({
-                "market": market, "side": side_label(side), "shares": payout,
-                "cost": quote.cost, "fee": quote.fee, "proofs": proofs,
-            }))
+            // Atomicity: issue the payout; if issuance fails AFTER the claim, hand the claimed
+            // (fresh, live) proofs back as a `refund` so the bettor is always made whole — the MM
+            // never keeps money without issuing. Only on success do we bank the reserve + record.
+            match issue_locked(mint_url, payout, lock, refund, locktime) {
+                Ok(proofs) => {
+                    append_reserve(store_path, &reserve)?;
+                    store.apply_buy(&market, side, payout as f64)?;
+                    Ok(json!({
+                        "market": market, "side": side_label(side), "shares": payout,
+                        "cost": quote.cost, "fee": quote.fee, "proofs": proofs,
+                    }))
+                }
+                Err(e) => Ok(json!({
+                    "refunded": true,
+                    "error": format!("issuance failed after payment: {e:#}"),
+                    "refund": reserve,
+                })),
+            }
         }
 
         _ => Err(anyhow!("not found: {method:?} {path}")),

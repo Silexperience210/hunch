@@ -85,10 +85,12 @@ export async function mmQuoteFetch(
   return post(url, "/quote", { market, side, budget });
 }
 
-/** Buy at the MM odds: the MM issues `shares` outcome-locked tokens and returns them. */
-export async function mmBuy(
-  url: string,
-  p: BuyParams,
-): Promise<{ shares: number; cost: number; fee: number; proofs: unknown[] }> {
+export type BuyResult =
+  | { shares: number; cost: number; fee: number; proofs: unknown[] }
+  /** Issuance failed after the payment was claimed — the MM hands the funds back as fresh proofs. */
+  | { refunded: true; error: string; refund: unknown[] };
+
+/** Buy at the MM odds: the MM claims the payment then issues `shares` outcome-locked tokens. */
+export async function mmBuy(url: string, p: BuyParams): Promise<BuyResult> {
   return post(url, "/buy", buildBuyBody(p));
 }
