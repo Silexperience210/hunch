@@ -16,7 +16,9 @@ name = "hunch-mm"
 path = "src/main.rs"
 
 [dependencies]
+hunch-mint = { path = "../hunch-mint" }
 serde = { workspace = true }
 serde_json.workspace = true
 anyhow.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
+tiny_http = "0.12"

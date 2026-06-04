@@ -112,6 +112,17 @@ enum Command {
         #[command(flatten)]
         store: StoreArg,
     },
+    /// Run the HTTP `/buy` service (quote + issue-at-odds against a cdk-mintd).
+    Serve {
+        #[command(flatten)]
+        store: StoreArg,
+        /// Address to listen on.
+        #[arg(long, default_value = "127.0.0.1:8088")]
+        listen: String,
+        /// cdk-mintd URL the MM issues outcome tokens from (its reserve funds the quotes).
+        #[arg(long, env = "HUNCH_MM_MINT")]
+        mint: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -227,6 +238,13 @@ fn main() -> Result<()> {
             if !any {
                 println!("(no pools)");
             }
+        }
+        Command::Serve {
+            store,
+            listen,
+            mint,
+        } => {
+            hunch_mm::service::serve(&listen, &mint, &store.store)?;
         }
     }
     Ok(())

@@ -10,6 +10,7 @@
 //! this ledger — see `SETTLEMENT.md` for the operator-reserve design (Path 2).
 
 pub mod pool;
+pub mod service;
 pub mod store;
 
 pub use pool::{Pool, Quote, Side};
