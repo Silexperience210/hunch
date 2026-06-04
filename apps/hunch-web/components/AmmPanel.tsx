@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { DEFAULT_DEPTH, quoteBet } from "@/lib/amm";
+import { DEFAULT_DEPTH, MAKER_FEE_BPS, quoteBet } from "@/lib/amm";
 import { Input } from "@/components/ui";
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -79,8 +79,10 @@ export function AmmPanel({
       </div>
       <p className="text-xs" style={{ color: "var(--muted)" }}>
         AMM (LMSR) price anchored on current odds — the mint is the market maker, so any market is
-        bettable instantly. Larger bets move the price (slippage shown as avg). Resting limit orders
-        live in the book below.
+        bettable instantly. Larger bets move the price (slippage shown as avg). Includes a{" "}
+        {(MAKER_FEE_BPS / 100).toFixed(0)}% maker fee
+        {amt > 0 ? ` (~${Math.max(0, Math.round(yes.fee))} sat on this stake)` : ""} that funds the
+        mint's liquidity. Resting limit orders live in the book below.
       </p>
     </section>
   );

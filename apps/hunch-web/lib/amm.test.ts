@@ -34,6 +34,15 @@ test("a more likely YES is more expensive (fewer shares per stake)", () => {
   assert.ok(atFavored.shares < atEven.shares); // YES costs more → buy less payout for the same stake
 });
 
+test("maker fee is taken off the top and reduces shares", () => {
+  const withFee = quoteBet("YES", 1000, 0.5, 10000, 200); // 2%
+  const noFee = quoteBet("YES", 1000, 0.5, 10000, 0);
+  // fee = stake·r/(1+r) for r=0.02 → ~19.6 sat, matching the Rust hunch-mm pool
+  assert.ok(close(withFee.fee, (1000 * 0.02) / 1.02, 1e-6));
+  assert.ok(close(noFee.fee, 0));
+  assert.ok(withFee.shares < noFee.shares); // paying a fee buys fewer shares
+});
+
 test("sharesForStake inverts costToBuy", () => {
   const shares = sharesForStake("YES", 100, 0, 0, 10000);
   assert.ok(close(costToBuy("YES", shares, 0, 0, 10000), 100, 1e-3));

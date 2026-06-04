@@ -14,6 +14,9 @@ import { costToBuy, priceYes as lmsrPriceYes } from "./lmsr.ts";
 /** Default liquidity depth in sats. Worst-case market-maker subsidy is b·ln2 ≈ 0.69·b. */
 export const DEFAULT_DEPTH = 10_000;
 
+/** Maker fee in basis points (the operator's rake), kept in sync with the Rust `hunch-mm` pool. */
+export const MAKER_FEE_BPS = 200;
+
 /**
  * Net YES inventory (with qNo = 0) that makes the LMSR price equal probability `p` (0..1).
  * priceYes(q, 0, b) = 1/(1 + e^(−q/b)) = p  ⇒  q = b·ln(p/(1−p)).
@@ -34,6 +37,8 @@ export interface Quote {
   avgPrice: number;
   /** Price of your side *after* the bet, 0..1 — shows the slippage you moved the market by. */
   priceAfter: number;
+  /** Maker fee (operator rake) included in the stake, in sats. */
+  fee: number;
 }
 
 /** Invert costToBuy: how many shares `stake` sats buys on `side`. Bisection (cost is monotone). */
@@ -54,17 +59,30 @@ export function sharesForStake(side: "YES" | "NO", stake: number, qYes: number, 
 
 /**
  * Quote a 1-click bet: you pay `stake` sats on `side`; returns the instant prices, the payout-if-win,
- * and the post-trade price (slippage). `p` is the current P(YES) anchor (e.g. order-book implied
- * odds), `b` the liquidity depth.
+ * the post-trade price (slippage), and the maker fee taken out of the stake. `p` is the current
+ * P(YES) anchor (e.g. order-book implied odds), `b` the liquidity depth, `feeBps` the maker fee.
+ *
+ * The fee is taken off the top: `stake = fairBudget·(1 + feeRate)`, so the bettor buys shares worth
+ * `fairBudget` at the fair LMSR price and `fee = stake − fairBudget` is the operator's rake — exactly
+ * matching the Rust `hunch-mm` pool.
  */
-export function quoteBet(side: "YES" | "NO", stake: number, p: number, b: number): Quote {
+export function quoteBet(
+  side: "YES" | "NO",
+  stake: number,
+  p: number,
+  b: number,
+  feeBps: number = MAKER_FEE_BPS,
+): Quote {
   const qYes = inventoryForProb(p, b);
   const qNo = 0;
   const priceYes = lmsrPriceYes(qYes, qNo, b);
   const priceNo = 1 - priceYes;
-  const shares = sharesForStake(side, stake, qYes, qNo, b);
+  const feeRate = feeBps / 10_000;
+  const fairBudget = stake / (1 + feeRate);
+  const fee = stake - fairBudget;
+  const shares = sharesForStake(side, fairBudget, qYes, qNo, b);
   const avgPrice = shares > 0 ? stake / shares : side === "YES" ? priceYes : priceNo;
   const priceAfter =
     side === "YES" ? lmsrPriceYes(qYes + shares, qNo, b) : 1 - lmsrPriceYes(qYes, qNo + shares, b);
-  return { priceYes, priceNo, shares, avgPrice, priceAfter };
+  return { priceYes, priceNo, shares, avgPrice, priceAfter, fee };
 }
