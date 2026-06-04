@@ -42,7 +42,14 @@ fn market() -> String {
     format!("{}:30888:m", "aa".repeat(32))
 }
 fn lock(outcome: Outcome) -> String {
-    outcome_lock_key(&bettor_pub(), &xonly(ORACLE), &xonly(NONCE), &market(), outcome).unwrap()
+    outcome_lock_key(
+        &bettor_pub(),
+        &xonly(ORACLE),
+        &xonly(NONCE),
+        &market(),
+        outcome,
+    )
+    .unwrap()
 }
 fn attest_yes() -> String {
     let o: [u8; 32] = hex::decode(ORACLE).unwrap().try_into().unwrap();
@@ -50,7 +57,12 @@ fn attest_yes() -> String {
     sign_attestation_with_nonce(&o, &n, &market(), Outcome::Yes).unwrap()
 }
 fn keyset_id(client: &reqwest::blocking::Client, url: &str) -> Id {
-    let keys: Value = client.get(format!("{url}/v1/keys")).send().unwrap().json().unwrap();
+    let keys: Value = client
+        .get(format!("{url}/v1/keys"))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
     Id::from_str(keys["keysets"][0]["id"].as_str().unwrap()).unwrap()
 }
 
@@ -88,7 +100,10 @@ fn redeem_set(
     ok && resp
         .json::<Value>()
         .ok()
-        .and_then(|b| b.get("signatures").and_then(|s| s.as_array().map(|a| !a.is_empty())))
+        .and_then(|b| {
+            b.get("signatures")
+                .and_then(|s| s.as_array().map(|a| !a.is_empty()))
+        })
         .unwrap_or(false)
 }
 
@@ -102,10 +117,20 @@ fn e2e_issue_locked_set_redeems() {
     let payout = 100u64; // multi-denomination: 64 + 32 + 4
 
     // The MM issues 100 sat of YES-locked tokens (it fronts the full payout from its reserve).
-    let yes_set = issue_locked(&url, payout, &lock(Outcome::Yes), &bettor_pub(), refund_timeout).unwrap();
+    let yes_set = issue_locked(
+        &url,
+        payout,
+        &lock(Outcome::Yes),
+        &bettor_pub(),
+        refund_timeout,
+    )
+    .unwrap();
     let total: u64 = yes_set.iter().map(|p| u64::from(p.amount)).sum();
     assert_eq!(total, payout, "issued set must sum to the payout");
-    assert!(yes_set.len() >= 2, "100 sat should span multiple denominations");
+    assert!(
+        yes_set.len() >= 2,
+        "100 sat should span multiple denominations"
+    );
 
     // The whole set redeems with the YES attestation key.
     let l_yes = outcome_unlock_secret(BETTOR, &attest_yes()).unwrap();
@@ -115,7 +140,14 @@ fn e2e_issue_locked_set_redeems() {
     );
 
     // A NO-locked set signed with the YES key must be rejected.
-    let no_set = issue_locked(&url, payout, &lock(Outcome::No), &bettor_pub(), refund_timeout).unwrap();
+    let no_set = issue_locked(
+        &url,
+        payout,
+        &lock(Outcome::No),
+        &bettor_pub(),
+        refund_timeout,
+    )
+    .unwrap();
     assert!(
         !redeem_set(&client, &url, id, no_set, &l_yes, payout),
         "mint must reject the NO-locked set signed with the YES key"
