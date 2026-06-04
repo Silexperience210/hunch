@@ -10,6 +10,7 @@
 
 import { Wallet } from "@cashu/cashu-ts";
 import { outcomeLockKey, outcomeUnlockSecret } from "../lib/dlc.ts";
+import { mintPlain, swapToLocked } from "../lib/wallet.ts";
 
 const MINT = process.env.HUNCH_MINT_URL ?? "http://127.0.0.1:8085";
 
@@ -64,6 +65,22 @@ async function main() {
     process.exit(1);
   }
   console.log("✔ NO token rejected");
+
+  // 3) Pay from balance: mint 2 plain sat into the wallet, then swap 1 sat into a YES-locked bet
+  //    (no Lightning), and redeem it with the YES attestation key. Proves the /bet "pay from
+  //    balance" path.
+  const q2 = await wallet.createMintQuote("bolt11", { amount: 2, unit: "sat" });
+  for (let i = 0; i < 80; i++) {
+    const s = await wallet.checkMintQuote("bolt11", q2);
+    if ((s as { state?: string }).state === "PAID") break;
+    await sleep(250);
+  }
+  const bal = await mintPlain(wallet, 2, q2);
+  const { locked, change } = await swapToLocked(wallet, 1, bal, lockYes, bettorCompressed, 1_900_000_000);
+  await wallet.receive(locked, { privkey: spendYes });
+  const changeSat = change.reduce((s, p) => s + Number((p as { amount: unknown }).amount), 0);
+  console.log(`✔ Pay-from-balance bet redeemed (change ${changeSat} sat kept)`);
+
   console.log(`WALLET E2E OK against ${MINT}`);
 }
 

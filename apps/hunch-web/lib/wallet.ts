@@ -54,6 +54,25 @@ export async function redeem(wallet: Wallet, proofs: Proof[], spendPrivkey: stri
   return wallet.receive(proofs, { privkey: spendPrivkey });
 }
 
+/**
+ * Pay a bet from existing wallet balance: swaps `proofs` into `amount` sat of P2PK-locked outputs
+ * (L_X), reclaimable by `refundPubkey` after `locktime`. No Lightning round-trip. Returns the locked
+ * bet proofs and the change to keep in the balance. Mirrors the `mintLocked` lock, via a swap.
+ */
+export async function swapToLocked(
+  wallet: Wallet,
+  amount: number,
+  proofs: Proof[],
+  lockPubkey: string,
+  refundPubkey: string,
+  locktime: number,
+): Promise<{ locked: Proof[]; change: Proof[] }> {
+  const res: any = await wallet.send(amount, proofs, undefined, {
+    send: { type: "p2pk", options: { pubkey: lockPubkey, locktime, refundKeys: [refundPubkey] } },
+  });
+  return { locked: res.send ?? [], change: res.keep ?? [] };
+}
+
 /** cashu-ts returns amounts as `Amount` objects ({ value: bigint }) in some responses; normalize. */
 function amountToNumber(a: unknown): number {
   if (typeof a === "number") return a;

@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { Wallet } from "@cashu/cashu-ts";
 import { compressedPubkey, outcomeLockKey, outcomeUnlockSecret, randomBettorSecret } from "@/lib/dlc";
-import { connect, depositQuote, mintLocked, payWithWebln, redeem, waitPaid } from "@/lib/wallet";
+import { connect, depositQuote, mintLocked, payWithWebln, redeem, swapToLocked, waitPaid } from "@/lib/wallet";
 import { fetchAnnounce, fetchAttestation } from "@/lib/oracle";
 import { relaysFromUrl, queryRelays } from "@/lib/relay";
 import { KIND_MARKET, parseMarketEvent, type Market } from "@/lib/hunch";
@@ -38,6 +38,7 @@ function BetView() {
   const [attestationSig, setAttestationSig] = useState("");
   const [question, setQuestion] = useState("");
   const [status, setStatus] = useState<Status>(null);
+  const [balance, setBalance] = useState(0);
   const [busy, setBusy] = useState(false);
 
   const wallet = useRef<Wallet | null>(null);
@@ -174,21 +175,62 @@ function BetView() {
     });
   }
 
+  // Read the spendable wallet balance for the active mint (shared with /wallet). Refresh after any
+  // action (status change) so a placed bet / new deposit is reflected immediately.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const proofs = JSON.parse(localStorage.getItem(`hunch:cashu:${mintUrl.trim()}`) ?? "[]");
+      setBalance(proofs.reduce((s: number, p: { amount: unknown }) => s + Number(p.amount), 0));
+    } catch {
+      setBalance(0);
+    }
+  }, [mintUrl, status]);
+
+  // Pay the bet straight from the existing wallet balance — a Cashu swap into an outcome-locked
+  // token, no Lightning round-trip. The change goes back to the balance.
+  async function payFromBalance() {
+    await guard(async () => {
+      if (!secret) throw new Error("Wallet key not ready.");
+      if (!market.trim()) throw new Error("No market selected — open this page from a market's “Bet →” link.");
+      if (!nonce.trim()) throw new Error("Oracle nonce R not loaded yet — open “advanced” to fetch or enter it.");
+      const amt = Number(amount);
+      if (!Number.isFinite(amt) || amt <= 0) throw new Error("Enter a stake amount.");
+      const balKey = `hunch:cashu:${mintUrl.trim()}`;
+      const bal = JSON.parse(localStorage.getItem(balKey) ?? "[]");
+      const balSat = bal.reduce((s: number, p: { amount: unknown }) => s + Number(p.amount), 0);
+      if (balSat < amt) throw new Error(`Not enough balance (${balSat} sat) for a ${amt} sat bet — deposit over Lightning.`);
+      const B = compressedPubkey(secret);
+      const lock = outcomeLockKey(B, oracle.trim(), nonce.trim(), market.trim(), outcome);
+      const w = wallet.current ?? (await connect(mintUrl.trim()));
+      wallet.current = w;
+      log("Swapping balance into your locked bet token…");
+      const { locked, change } = await swapToLocked(w, amt, bal, lock, B, REFUND_LOCKTIME);
+      const prev = JSON.parse(localStorage.getItem(proofsKey) ?? "[]");
+      localStorage.setItem(proofsKey, JSON.stringify([...prev, ...locked]));
+      localStorage.setItem(balKey, JSON.stringify(change));
+      log(`✔ Bet placed from balance — ${amt} sat on ${outcome}, locked to the oracle outcome. No deposit needed.`, "ok");
+    });
+  }
+
   async function payAndMint() {
     await guard(async () => {
       const w = wallet.current;
       if (!w || !quote.current) throw new Error("Run Deposit first.");
       try {
         await payWithWebln(invoice);
+        log("Payment sent via WebLN — confirming with the mint…");
       } catch {
-        log("WebLN unavailable — pay the invoice manually, then click again to continue.");
+        log("Waiting for your payment… pay the invoice above (scan the QR or “Open wallet”), then this confirms automatically.");
       }
       await waitPaid(w, quote.current);
+      log("✔ Payment received — minting your bet token…", "ok");
       const B = compressedPubkey(secret);
       const lock = outcomeLockKey(B, oracle.trim(), nonce.trim(), market.trim(), outcome);
       const proofs = await mintLocked(w, Number(amount), quote.current, lock, B, REFUND_LOCKTIME);
       localStorage.setItem(proofsKey, JSON.stringify(proofs));
-      log(`✔ Bet placed — minted ${proofs.length} ${outcome} token(s), locked to the oracle outcome and saved in this browser.`, "ok");
+      setInvoice("");
+      log(`✔ Bet placed — ${Number(amount)} sat on ${outcome}, locked to the oracle outcome and saved in this browser.`, "ok");
     });
   }
 
@@ -267,11 +309,35 @@ function BetView() {
         </label>
       </section>
 
-      {/* 2 · deposit & mint */}
+      {/* 2 · pay — from balance (instant, no deposit) or via a new Lightning deposit */}
       <section className="flex flex-col gap-2">
-        <span style={{ color: "var(--muted)" }} className="text-xs">deposit &amp; mint</span>
+        <div className="flex items-center justify-between gap-2">
+          <span style={{ color: "var(--muted)" }} className="text-xs">pay</span>
+          <span className="text-xs" style={{ color: "var(--muted)" }}>
+            wallet balance:{" "}
+            <span style={{ color: balance >= Number(amount) && Number(amount) > 0 ? "var(--accent)" : "var(--muted)" }}>
+              {balance} sat
+            </span>{" "}
+            · <Link href="/wallet/" style={{ color: "var(--accent)" }}>top up</Link>
+          </span>
+        </div>
+
+        {balance >= Number(amount) && Number(amount) > 0 ? (
+          <>
+            <Button variant="primary" onClick={payFromBalance} disabled={busy}>
+              Bet {amount} sat from balance — instant, no deposit
+            </Button>
+            <span className="text-xs" style={{ color: "var(--muted)" }}>or deposit more over Lightning:</span>
+          </>
+        ) : (
+          <span className="text-xs" style={{ color: "var(--muted)" }}>
+            {Number(amount) > 0 && balance > 0 ? `balance ${balance} sat is below the ${amount} sat stake — ` : ""}
+            deposit over Lightning:
+          </span>
+        )}
+
         <div className="flex gap-2 flex-wrap">
-          <Button variant="primary" onClick={deposit} disabled={busy}>
+          <Button variant={balance >= Number(amount) && Number(amount) > 0 ? "secondary" : "primary"} onClick={deposit} disabled={busy}>
             1. Deposit
           </Button>
           <Button onClick={payAndMint} disabled={busy || !invoice}>
