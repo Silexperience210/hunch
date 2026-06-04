@@ -178,3 +178,47 @@ fn side_label(s: Side) -> &'static str {
         Side::No => "NO",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seeded_store(tag: &str) -> String {
+        let path =
+            std::env::temp_dir().join(format!("hunch-mm-svc-{tag}-{}.json", std::process::id()));
+        let p = path.to_string_lossy().to_string();
+        let _ = std::fs::remove_file(&p);
+        let mut s = PoolStore::load(&p).unwrap();
+        s.seed("m:1", 10_000.0, 200, true).unwrap();
+        p
+    }
+
+    #[test]
+    fn quote_route_returns_cost_and_fee() {
+        let store = seeded_store("quote");
+        let body = r#"{"market":"m:1","side":"YES","budget":1000}"#;
+        let v = route(&Method::Post, "/quote", body, "http://unused", &store).unwrap();
+        assert!(v["cost"].as_f64().unwrap() > 0.0);
+        assert!(v["fee"].as_f64().unwrap() > 0.0);
+        assert!(v["shares"].as_f64().unwrap() > 1000.0); // price < 1 → payout > stake
+        let _ = std::fs::remove_file(&store);
+    }
+
+    #[test]
+    fn pool_route_and_error_paths() {
+        let store = seeded_store("pool");
+        let v = route(&Method::Get, "/pool/m:1", "", "http://unused", &store).unwrap();
+        assert!((v["priceYes"].as_f64().unwrap() - 0.5).abs() < 1e-9);
+        assert!(route(&Method::Get, "/pool/nope", "", "x", &store).is_err()); // unknown market
+        assert!(route(
+            &Method::Post,
+            "/quote",
+            r#"{"market":"m:1","side":"X"}"#,
+            "x",
+            &store
+        )
+        .is_err());
+        assert!(route(&Method::Get, "/health", "", "x", &store).unwrap()["ok"] == true);
+        let _ = std::fs::remove_file(&store);
+    }
+}

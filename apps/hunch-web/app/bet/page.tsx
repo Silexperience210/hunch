@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { Wallet } from "@cashu/cashu-ts";
 import { compressedPubkey, outcomeLockKey, outcomeUnlockSecret, randomBettorSecret } from "@/lib/dlc";
 import { connect, depositQuote, mintLocked, payWithWebln, redeem, swapToLocked, waitPaid } from "@/lib/wallet";
+import { mmBuy, mmUrl, setMmUrl } from "@/lib/mm";
 import { fetchAnnounce, fetchAttestation } from "@/lib/oracle";
 import { relaysFromUrl, queryRelays } from "@/lib/relay";
 import { KIND_MARKET, parseMarketEvent, type Market } from "@/lib/hunch";
@@ -39,6 +40,7 @@ function BetView() {
   const [question, setQuestion] = useState("");
   const [status, setStatus] = useState<Status>(null);
   const [balance, setBalance] = useState(0);
+  const [mmService, setMmService] = useState("");
   const [busy, setBusy] = useState(false);
 
   const wallet = useRef<Wallet | null>(null);
@@ -213,6 +215,41 @@ function BetView() {
     });
   }
 
+  // Load any configured mint-as-market-maker service URL (opt-in; default flow unchanged when empty).
+  useEffect(() => {
+    setMmService(mmUrl());
+  }, []);
+
+  // Buy at the MM's LMSR odds: the MM issues `shares` outcome-locked tokens (issue-at-odds), which
+  // we store and redeem after settlement like any outcome token. Needs a configured MM service.
+  async function buyViaMm() {
+    await guard(async () => {
+      const url = mmService.trim();
+      if (!url) throw new Error("No market-maker service configured — set it in “advanced”.");
+      if (!market.trim()) throw new Error("No market selected.");
+      if (!nonce.trim()) throw new Error("Oracle nonce R not loaded yet — open “advanced” to fetch it.");
+      const amt = Number(amount);
+      if (!Number.isFinite(amt) || amt <= 0) throw new Error("Enter a stake amount.");
+      const B = compressedPubkey(secret);
+      const lock = outcomeLockKey(B, oracle.trim(), nonce.trim(), market.trim(), outcome);
+      log("Buying at the AMM odds — the mint is issuing your outcome tokens…");
+      const res = await mmBuy(url, {
+        market: market.trim(),
+        side: outcome,
+        budget: amt,
+        lock,
+        refund: B,
+        locktime: REFUND_LOCKTIME,
+      });
+      const prev = JSON.parse(localStorage.getItem(proofsKey) ?? "[]");
+      localStorage.setItem(proofsKey, JSON.stringify([...prev, ...res.proofs]));
+      log(
+        `✔ Bet via AMM — ${res.shares} sat payout on ${outcome} if you win (cost ${Math.round(res.cost)} sat, maker fee ${Math.round(res.fee)} sat), locked & saved. Redeem after settlement.`,
+        "ok",
+      );
+    });
+  }
+
   async function payAndMint() {
     await guard(async () => {
       const w = wallet.current;
@@ -322,6 +359,18 @@ function BetView() {
           </span>
         </div>
 
+        {mmService.trim() && (
+          <div className="flex flex-col gap-1">
+            <Button variant="primary" onClick={buyViaMm} disabled={busy}>
+              Bet {amount} sat via AMM — instant, mint is the counterparty
+            </Button>
+            <span className="text-xs" style={{ color: "var(--muted)" }}>
+              The mint issues your outcome tokens at the live LMSR odds (maker fee applies). Or use a
+              direct deposit below.
+            </span>
+          </div>
+        )}
+
         {balance >= Number(amount) && Number(amount) > 0 ? (
           <>
             <Button variant="primary" onClick={payFromBalance} disabled={busy}>
@@ -411,6 +460,14 @@ function BetView() {
             </Button>
           </div>
           <Input placeholder="mint url" value={mintUrl} onChange={(e) => setMintUrl(e.target.value)} />
+          <Input
+            placeholder="market-maker (AMM) service url — optional, enables 1-click buy at LMSR odds"
+            value={mmService}
+            onChange={(e) => {
+              setMmService(e.target.value);
+              setMmUrl(e.target.value);
+            }}
+          />
           <Input placeholder="market id (creator:30888:slug)" value={market} onChange={(e) => setMarket(e.target.value)} />
           <Input placeholder="oracle pubkey (x-only hex)" value={oracle} onChange={(e) => setOracle(e.target.value)} />
           <Input placeholder="relays (comma-separated)" value={relays} onChange={(e) => setRelays(e.target.value)} />
